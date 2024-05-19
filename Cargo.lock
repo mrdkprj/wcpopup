@@ -33,7 +33,6 @@ dependencies = [
  "once_cell",
  "serde",
  "windows",
- "windows-core",
 ]
 
 [[package]]

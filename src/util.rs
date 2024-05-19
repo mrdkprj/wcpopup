@@ -1,8 +1,14 @@
 use crate::MenuData;
 use std::{mem::transmute, os::windows::ffi::OsStrExt};
 use serde::Serialize;
-use windows_core::PCWSTR;
-use windows::Win32::{Foundation::HWND, Globalization::lstrlenW, UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA}};
+use windows::{
+  core::PCWSTR,
+  Win32::{
+    Foundation::HWND,
+    Globalization::lstrlenW,
+    UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA}
+  }
+};
 
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, PartialEq, Eq)]

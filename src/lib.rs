@@ -1,44 +1,46 @@
-mod util;
-mod config;
-mod menu_item;
+pub mod util;
+pub mod config;
+pub mod menu_item;
 use util::*;
 use config::*;
 use menu_item::*;
 
 use std::{ffi::c_void, mem::{size_of, transmute}, sync::atomic::{AtomicU32, Ordering}};
 use once_cell::sync::Lazy;
-use windows::Win32::{
-    Foundation::{COLORREF, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-    Graphics::Gdi::{
-        BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
-        ExcludeClipRect, FillRect, GetDC, GetMonitorInfoW, GetObjectW, GetWindowDC, InflateRect, InvalidateRect,
-        LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject,
-        SetBkMode, SetTextColor, UpdateWindow,
-        DT_CALCRECT, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,PS_SOLID, TRANSPARENT,
-        HBRUSH, HDC, HFONT, HGDIOBJ, HPEN, LOGFONTW, MONITORINFO, PAINTSTRUCT
-    },
-    System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW},
-    UI::{
-        Controls::{CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_NORMAL, OTD_NONCLIENT},
-        Input::KeyboardAndMouse::{
-            GetActiveWindow, ReleaseCapture, SendInput, SetCapture,
-            INPUT, INPUT_0, MOUSEINPUT,
-            INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK
+use windows::{
+    core::{w, PCSTR, PCWSTR, Error},
+    Win32::{
+        Foundation::{COLORREF, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Graphics::Gdi::{
+            BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
+            ExcludeClipRect, FillRect, GetDC, GetMonitorInfoW, GetObjectW, GetWindowDC, InflateRect, InvalidateRect,
+            LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject,
+            SetBkMode, SetTextColor, UpdateWindow,
+            DT_CALCRECT, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL,PS_SOLID, TRANSPARENT,
+            HBRUSH, HDC, HFONT, HGDIOBJ, HPEN, LOGFONTW, MONITORINFO, PAINTSTRUCT
         },
-        Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
-        WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent,
-            GetSystemMetrics, GetWindowRect, IsWindowVisible, KillTimer, PostMessageW, RegisterClassExW, SetTimer,
-            SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, WindowFromPoint,
-            CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GWL_USERDATA, HWND_TOP, SM_CXHSCROLL, SM_CXMENUCHECK, SM_CYMENU,
-            SPI_GETNONCLIENTMETRICS, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SPI_GETMENUSHOWDELAY,
-            WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
-            WM_RBUTTONUP, WM_THEMECHANGED, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
-            HCURSOR, HICON, MSG, NONCLIENTMETRICSW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WNDCLASSEXW,
+        System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW},
+        UI::{
+            Controls::{CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_NORMAL, OTD_NONCLIENT},
+            Input::KeyboardAndMouse::{
+                GetActiveWindow, ReleaseCapture, SendInput, SetCapture,
+                INPUT, INPUT_0, MOUSEINPUT,
+                INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK
+            },
+            Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+            WindowsAndMessaging::{
+                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent,
+                GetSystemMetrics, GetWindowRect, IsWindowVisible, KillTimer, PostMessageW, RegisterClassExW, SetTimer,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, WindowFromPoint,
+                CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GWL_USERDATA, HWND_TOP, SM_CXHSCROLL, SM_CXMENUCHECK, SM_CYMENU,
+                SPI_GETNONCLIENTMETRICS, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SPI_GETMENUSHOWDELAY,
+                WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN,
+                WM_RBUTTONUP, WM_THEMECHANGED, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                HCURSOR, HICON, MSG, NONCLIENTMETRICSW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WNDCLASSEXW,
+            }
         }
     }
 };
-use windows_core::{w, PCSTR, PCWSTR};
 
 static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 static COUNTER:AtomicU32 = AtomicU32::new(400);
@@ -205,7 +207,7 @@ impl RMenu {
         self
     }
 
-    pub fn build(&mut self) -> Result<(), windows_core::Error> {
+    pub fn build(&mut self) -> Result<(), Error> {
 
         // Add top and left margin
         let mut width = self.size.horizontal_margin;
@@ -256,6 +258,7 @@ impl RMenu {
         unsafe { SetWindowLongPtrW(self.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
         Ok(())
+
     }
 
     fn attach_owner_subclass(&self, id:usize) {
@@ -487,7 +490,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(
     }
 }
 
-fn measure_item(hwnd:HWND, size:&MenuSize, item_data:&InnerMenuItem, theme:Theme) -> Result<(i32,i32), windows_core::Error> {
+fn measure_item(hwnd:HWND, size:&MenuSize, item_data:&InnerMenuItem, theme:Theme) -> Result<(i32,i32), Error> {
 
     let mut width = 0;
     let height;
@@ -547,7 +550,7 @@ fn measure_item(hwnd:HWND, size:&MenuSize, item_data:&InnerMenuItem, theme:Theme
     Ok((width,height))
 }
 
-fn get_font(theme:Theme, size:&MenuSize) -> Result<LOGFONTW, windows_core::Error> {
+fn get_font(theme:Theme, size:&MenuSize) -> Result<LOGFONTW, Error> {
 
     let mut info:NONCLIENTMETRICSW = NONCLIENTMETRICSW::default();
     info.cbSize = size_of::<NONCLIENTMETRICSW>() as u32;
@@ -608,7 +611,7 @@ fn paint_background(hwnd:HWND, data:&MenuData) {
     }
 }
 
-fn on_paint(hwnd:HWND, data:&MenuData, theme:HTHEME) -> Result<(), windows_core::Error> {
+fn on_paint(hwnd:HWND, data:&MenuData, theme:HTHEME) -> Result<(), Error> {
 
     let mut paint_struct = PAINTSTRUCT::default();
     let dc = unsafe { BeginPaint(hwnd, &mut paint_struct) };
@@ -630,7 +633,7 @@ fn on_paint(hwnd:HWND, data:&MenuData, theme:HTHEME) -> Result<(), windows_core:
     Ok(())
 }
 
-fn paint(dc:HDC, data:&MenuData, items:&Vec<InnerMenuItem>, theme:HTHEME) -> Result<(), windows_core::Error> {
+fn paint(dc:HDC, data:&MenuData, items:&Vec<InnerMenuItem>, theme:HTHEME) -> Result<(), Error> {
 
     let scheme = get_color_scheme(data);
     let selected_color = unsafe { CreateSolidBrush(COLORREF(scheme.hover_background_color)) };
@@ -695,7 +698,7 @@ fn paint(dc:HDC, data:&MenuData, items:&Vec<InnerMenuItem>, theme:HTHEME) -> Res
     Ok(())
 }
 
-fn draw_separator(dc:HDC, scheme:&ColorScheme, rect:RECT) -> Result<(), windows_core::Error> {
+fn draw_separator(dc:HDC, scheme:&ColorScheme, rect:RECT) -> Result<(), Error> {
 
     let mut separator_rect = rect.clone();
 
@@ -710,7 +713,7 @@ fn draw_separator(dc:HDC, scheme:&ColorScheme, rect:RECT) -> Result<(), windows_
     Ok(())
 }
 
-fn draw_menu_text(dc:HDC, scheme:&ColorScheme, rect:&RECT, item:&InnerMenuItem, data:&MenuData, disabled:bool) -> Result<(), windows_core::Error> {
+fn draw_menu_text(dc:HDC, scheme:&ColorScheme, rect:&RECT, item:&InnerMenuItem, data:&MenuData, disabled:bool) -> Result<(), Error> {
 
     let mut text_rect = rect.clone();
 
@@ -1041,7 +1044,7 @@ fn on_theme_change(hwnd:HWND, theme:Option<Theme>){
 
 }
 
-fn create_container_hwnd(parent: HWND, theme:Theme) -> Result<HWND, windows_core::Error> {
+fn create_container_hwnd(parent: HWND, theme:Theme) -> Result<HWND, Error> {
 
     let class_name = w!("R_POPUPMENU");
 
@@ -1087,7 +1090,7 @@ fn create_container_hwnd(parent: HWND, theme:Theme) -> Result<HWND, windows_core
     Ok(hwnd)
 }
 
-pub fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
+fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
     const UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL: u16 = 133;
     type AllowDarkModeForWindow = unsafe extern "system" fn(HWND, bool) -> bool;
     static ALLOW_DARK_MODE_FOR_WINDOW: Lazy<Option<AllowDarkModeForWindow>> = Lazy::new(|| unsafe {
