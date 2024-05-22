@@ -1,9 +1,10 @@
-pub mod builder;
-pub mod config;
-pub mod menu_item;
-pub mod util;
-use config::*;
-use menu_item::*;
+mod builder;
+mod config;
+mod menu_item;
+mod util;
+pub use builder::*;
+pub use config::*;
+pub use menu_item::*;
 use util::*;
 
 use once_cell::sync::Lazy;
@@ -31,7 +32,6 @@ use windows::{
 
 static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 
-const MAIN_MENU_INDEX: i32 = 0;
 const LR_BUTTON_SIZE: i32 = 25;
 const SUBMENU_OFFSET: i32 = -5;
 const TIMER_ID: usize = 500;
@@ -39,6 +39,12 @@ const TIMER_ID: usize = 500;
 const WM_MENUSELECTED: u32 = WM_APP + 0x0001;
 const WM_CLOSEMENU: u32 = WM_APP + 0x0002;
 const WM_INACTIVATE: u32 = WM_APP + 0x0003;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuType {
+    Main,
+    Submenu,
+}
 
 struct Size {
     width: i32,
@@ -56,27 +62,27 @@ struct DisplayPoint {
 #[derive(Debug, Clone)]
 pub struct RMenu {
     pub hwnd: HWND,
+    pub menu_type: MenuType,
     parent: HWND,
     width: i32,
     height: i32,
-    index: i32,
 }
 
 impl Default for RMenu {
     fn default() -> Self {
         Self {
             hwnd: HWND(0),
+            menu_type: MenuType::Main,
             parent: HWND(0),
             height: 0,
             width: 0,
-            index: MAIN_MENU_INDEX,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 struct MenuData {
-    index: i32,
+    menu_type: MenuType,
     items: Vec<MenuItem>,
     htheme: Option<HTHEME>,
     win_subclass_id: Option<u32>,
@@ -111,6 +117,19 @@ impl RMenu {
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
         data.items.push(item);
+        Self::rebuild(self, data);
+    }
+
+    pub fn insert(&mut self, mut item: MenuItem, index: u32) {
+        let data = get_menu_data_mut(self.hwnd);
+        item.hwnd = self.hwnd;
+        data.items.insert(index as usize, item);
+        Self::rebuild(self, data);
+    }
+
+    pub fn remove(&mut self, index: u32) {
+        let data = get_menu_data_mut(self.hwnd);
+        data.items.remove(index as usize);
         Self::rebuild(self, data);
     }
 
@@ -225,7 +244,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         WM_DESTROY => {
             let data = get_menu_data_mut(window);
-            if data.index == MAIN_MENU_INDEX {
+            if data.menu_type == MenuType::Main {
                 RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
                 CloseThemeData(data.htheme.unwrap()).unwrap();
             }
@@ -257,7 +276,11 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             }
 
             if data.visible_submenu_index >= 0 {
-                let hwnd = data.items[data.visible_submenu_index as usize].submenu.unwrap();
+                let hwnd = data.items[data.visible_submenu_index as usize]
+                    .submenu
+                    .as_ref()
+                    .unwrap()
+                    .hwnd;
                 let data = get_menu_data_mut(hwnd);
                 on_mouse_move(data, hwnd, pt);
                 set_menu_data(hwnd, data);
@@ -547,7 +570,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         let mut main_menu_rect = RECT::default();
         GetWindowRect(hwnd, &mut main_menu_rect).unwrap();
         let item = &main_menu_data.items[main_menu_data.visible_submenu_index as usize];
-        let submenu_hwnd = item.submenu.unwrap();
+        let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
         let submenu_data = get_menu_data(submenu_hwnd);
 
         let pt = get_display_point(submenu_hwnd, main_menu_rect.right, main_menu_rect.top + item.top, submenu_data.width, submenu_data.height);
@@ -590,7 +613,11 @@ fn toggle_submenu(data: &mut MenuData, selected_index: i32) -> bool {
     }
 
     if data.visible_submenu_index >= 0 && data.visible_submenu_index != selected_index {
-        let hwnd = data.items[data.visible_submenu_index as usize].submenu.unwrap();
+        let hwnd = data.items[data.visible_submenu_index as usize]
+            .submenu
+            .as_ref()
+            .unwrap()
+            .hwnd;
         hide_submenu(hwnd);
         data.visible_submenu_index = -1;
     }
@@ -750,7 +777,11 @@ fn index_from_point(hwnd: HWND, screen_pt: POINT, data: &MenuData) -> i32 {
 fn get_hwnd_from_point(hwnd: HWND, lparam: LPARAM) -> Option<HWND> {
     let data = get_menu_data(hwnd);
     let submenu = if data.visible_submenu_index >= 0 {
-        data.items[data.visible_submenu_index as usize].submenu.unwrap()
+        data.items[data.visible_submenu_index as usize]
+            .submenu
+            .as_ref()
+            .unwrap()
+            .hwnd
     } else {
         HWND(0)
     };
@@ -775,7 +806,11 @@ fn init_menu_data(hwnd: HWND) {
     data.selected_index = -1;
 
     if data.visible_submenu_index >= 0 {
-        let submenu_hwnd = data.items[data.visible_submenu_index as usize].submenu.unwrap();
+        let submenu_hwnd = data.items[data.visible_submenu_index as usize]
+            .submenu
+            .as_ref()
+            .unwrap()
+            .hwnd;
         hide_submenu(submenu_hwnd);
     }
     data.visible_submenu_index = -1;
@@ -817,7 +852,7 @@ fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
 
     for item in &data.items {
         if item.menu_item_type == MenuItemType::Submenu {
-            let submenu_hwnd = item.submenu.unwrap();
+            let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
             let data = get_menu_data_mut(submenu_hwnd);
             data.theme = if is_dark {
                 Theme::Dark
@@ -887,5 +922,7 @@ fn should_apps_use_dark_mode() -> bool {
         GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
     });
 
-    SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)
+    SHOULD_APPS_USE_DARK_MODE
+        .map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() })
+        .unwrap_or(false)
 }

@@ -1,4 +1,4 @@
-use crate::{MenuData, MenuItem, MenuItemType, MenuSize, Theme, LR_BUTTON_SIZE, MENU_CHECKED};
+use crate::{MenuData, MenuItem, MenuItemState, MenuItemType, MenuSize, Theme, LR_BUTTON_SIZE, MENU_CHECKED, MENU_DISABLED, MENU_NORMAL};
 use std::{
     ffi::c_void,
     mem::{size_of, transmute},
@@ -29,7 +29,11 @@ pub(crate) fn set_menu_data(hwnd: HWND, data: &mut MenuData) {
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
-    string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
+    string
+        .as_ref()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 #[allow(dead_code)]
@@ -47,6 +51,19 @@ pub(crate) fn LOWORD(dword: u32) -> u16 {
 #[allow(non_snake_case)]
 pub(crate) fn HIWORD(dword: u32) -> u16 {
     ((dword & 0xFFFF_0000) >> 16) as u16
+}
+
+pub(crate) fn create_state(disabled: Option<bool>, checked: Option<bool>) -> MenuItemState {
+    let mut state = MENU_NORMAL.0;
+    if disabled.is_some() && disabled.unwrap() {
+        state |= MENU_DISABLED.0;
+    }
+
+    if checked.is_some() && checked.unwrap() {
+        state |= MENU_CHECKED.0;
+    }
+
+    MenuItemState(state)
 }
 
 pub(crate) fn toggle_checked(item: &mut MenuItem, checked: bool) {
