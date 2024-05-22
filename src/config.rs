@@ -13,7 +13,11 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self { theme: Theme::Light, size: MenuSize::default(), color: ThemeColor::default() }
+        Self {
+            theme: Theme::Light,
+            size: MenuSize::default(),
+            color: ThemeColor::default(),
+        }
     }
 }
 
@@ -50,7 +54,10 @@ pub struct ThemeColor {
 
 impl Default for ThemeColor {
     fn default() -> Self {
-        Self { dark: DARK_COLOR_SCHEME, light: LIGHT_COLOR_SCHEME }
+        Self {
+            dark: DARK_COLOR_SCHEME,
+            light: LIGHT_COLOR_SCHEME,
+        }
     }
 }
 

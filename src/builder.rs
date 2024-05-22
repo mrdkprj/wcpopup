@@ -74,44 +74,37 @@ impl MenuBuilder {
     }
 
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Text, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Text, None));
         self
     }
 
     pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, "", accelerator, "", create_state(disabled, None), MenuItemType::Text, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, "", accelerator, "", create_state(disabled, None), MenuItemType::Text, None));
         self
     }
 
     pub fn check(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, value, "", "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
         self
     }
 
     pub fn check_with_accelerator(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
         self
     }
 
     pub fn radio(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, value, "", name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
         self
     }
 
     pub fn radio_with_accelerator(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
         self
     }
 
     pub fn separator(&mut self) -> &Self {
-        self.items
-            .push(MenuItem::new(self.menu.hwnd, "", "", "", "", "", create_state(None, None), MenuItemType::Separator, None));
+        self.items.push(MenuItem::new(self.menu.hwnd, "", "", "", "", "", create_state(None, None), MenuItemType::Separator, None));
         self
     }
 
@@ -128,9 +121,7 @@ impl MenuBuilder {
     }
 
     pub fn build(mut self) -> Result<RMenu, Error> {
-        let size = self
-            .menu
-            .calculate(&mut self.items, &self.config.size, self.config.theme)?;
+        let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
         let data = MenuData {
@@ -157,8 +148,7 @@ impl MenuBuilder {
         };
 
         if is_main_menu {
-            self.menu
-                .attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
+            self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };

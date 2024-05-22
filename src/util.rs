@@ -29,11 +29,7 @@ pub(crate) fn set_menu_data(hwnd: HWND, data: &mut MenuData) {
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
-    string
-        .as_ref()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
+    string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
 }
 
 #[allow(dead_code)]
