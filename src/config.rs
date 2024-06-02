@@ -85,3 +85,7 @@ const LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
     background_color: 0x00f5f5f5,
     hover_background_color: 0x0e9e2e2,
 };
+
+pub fn rgb(r: u8, g: u8, b: u8) -> u32 {
+    (r as u32) << 16 | (g as u32) << 8 | (b as u32)
+}

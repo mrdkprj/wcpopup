@@ -2,7 +2,7 @@ use crate::{
     builder::MenuBuilder,
     create_state,
     util::{get_menu_data, get_menu_data_mut, set_menu_data, toggle_checked, toggle_radio},
-    RMenu,
+    Menu,
 };
 use serde::Serialize;
 use windows::Win32::Foundation::HWND;
@@ -31,7 +31,7 @@ pub struct MenuItem {
     pub name: String,
     pub state: MenuItemState,
     pub menu_item_type: MenuItemType,
-    pub submenu: Option<RMenu>,
+    pub submenu: Option<Menu>,
     pub(crate) hwnd: HWND,
     pub(crate) index: i32,
     pub(crate) top: i32,
@@ -39,7 +39,7 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
-    pub fn new(hwnd: HWND, id: &str, label: &str, value: &str, accelerator: &str, name: &str, state: MenuItemState, menu_item_type: MenuItemType, submenu: Option<RMenu>) -> Self {
+    pub fn new(hwnd: HWND, id: &str, label: &str, value: &str, accelerator: &str, name: &str, state: MenuItemState, menu_item_type: MenuItemType, submenu: Option<Menu>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -156,7 +156,7 @@ pub struct SubmenuItemBuilder {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(menu: &RMenu, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
+    pub fn new_submenu_item(menu: &Menu, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
         let mut item = MenuItem::new(menu.hwnd, label, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
         /* Create builder */
         let builder = MenuBuilder::new_from_menu(menu);

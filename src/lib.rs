@@ -60,7 +60,7 @@ struct DisplayPoint {
 }
 
 #[derive(Debug, Clone)]
-pub struct RMenu {
+pub struct Menu {
     pub hwnd: HWND,
     pub menu_type: MenuType,
     parent: HWND,
@@ -68,7 +68,7 @@ pub struct RMenu {
     height: i32,
 }
 
-impl Default for RMenu {
+impl Default for Menu {
     fn default() -> Self {
         Self {
             hwnd: HWND(0),
@@ -95,7 +95,7 @@ struct MenuData {
     color: ThemeColor,
 }
 
-impl RMenu {
+impl Menu {
     pub(crate) fn create_window(&self, parent: HWND, theme: Theme) -> HWND {
         create_menu_window(parent, theme).unwrap()
     }

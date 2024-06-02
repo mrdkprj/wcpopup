@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use crate::{create_state, get_menu_data, Config, MenuData, MenuItem, MenuItemType, MenuType, RMenu, Theme};
+use crate::{create_state, get_menu_data, Config, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
 use windows::core::{w, Error};
 use windows::Win32::UI::Controls::OTD_NONCLIENT;
 use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA};
@@ -8,7 +8,7 @@ use windows::Win32::{Foundation::HWND, UI::Controls::OpenThemeDataEx};
 
 static COUNTER: AtomicU32 = AtomicU32::new(400);
 pub struct MenuBuilder {
-    pub(crate) menu: RMenu,
+    pub(crate) menu: Menu,
     items: Vec<MenuItem>,
     config: Config,
     menu_type: MenuType,
@@ -16,7 +16,7 @@ pub struct MenuBuilder {
 
 impl MenuBuilder {
     pub fn new(parent: HWND) -> Self {
-        let mut menu = RMenu::default();
+        let mut menu = Menu::default();
         menu.parent = parent;
         menu.hwnd = menu.create_window(parent, Theme::Light);
         Self {
@@ -28,7 +28,7 @@ impl MenuBuilder {
     }
 
     pub fn new_with_theme(parent: HWND, theme: Theme) -> Self {
-        let mut menu = RMenu::default();
+        let mut menu = Menu::default();
         menu.parent = parent;
         menu.hwnd = menu.create_window(parent, theme);
         let mut config = Config::default();
@@ -42,7 +42,7 @@ impl MenuBuilder {
     }
 
     pub fn new_from_config(parent: HWND, config: Config) -> Self {
-        let mut menu = RMenu::default();
+        let mut menu = Menu::default();
         menu.parent = parent;
         menu.hwnd = menu.create_window(parent, config.theme);
         Self {
@@ -53,7 +53,7 @@ impl MenuBuilder {
         }
     }
 
-    pub(crate) fn new_from_menu(parent: &RMenu) -> Self {
+    pub(crate) fn new_from_menu(parent: &Menu) -> Self {
         let data = get_menu_data(parent.hwnd);
         let config = Config {
             theme: data.theme,
@@ -61,7 +61,7 @@ impl MenuBuilder {
             color: data.color.clone(),
         };
 
-        let mut menu = RMenu::default();
+        let mut menu = Menu::default();
         menu.parent = parent.hwnd;
         menu.hwnd = menu.create_window(parent.hwnd, config.theme);
 
@@ -120,7 +120,7 @@ impl MenuBuilder {
         builder
     }
 
-    pub fn build(mut self) -> Result<RMenu, Error> {
+    pub fn build(mut self) -> Result<Menu, Error> {
         let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
