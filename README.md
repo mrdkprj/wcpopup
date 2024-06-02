@@ -1,4 +1,4 @@
-# RMenu
+# RPopup
 Rust context/popup menu for Windows.  
 Supports dark/light theme and color/size configuration. 
 - Colors
