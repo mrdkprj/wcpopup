@@ -665,19 +665,12 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
     let mut rtl = false;
     let mut reverse = false;
 
-    /*
-     *  First get the dimensions of the monitor that contains (x, y).
-     */
     let mut ppt = POINT::default();
     ppt.x = x;
     ppt.y = y;
 
     let mut hmon = unsafe { MonitorFromPoint(ppt, MONITOR_DEFAULTTONULL) };
 
-    /*
-     *  If (x, y) is not on any monitor, then use the monitor that
-     *  the owner window is on.
-     */
     if hmon.0 == 0 {
         hmon = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     }
@@ -686,32 +679,19 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
     minf.cbSize = size_of::<MONITORINFO>() as u32;
     let _ = unsafe { GetMonitorInfoW(hmon, &mut minf) };
 
-    /*
-     *  If too high, then slide down.
-     */
     if ppt.y < minf.rcWork.top {
         ppt.y = minf.rcMonitor.top;
     }
 
-    /*
-     *  If too far left, then slide right.
-     */
     if ppt.x < minf.rcWork.left {
         ppt.x = minf.rcMonitor.left;
     }
 
-    /*
-     *  If too low, then slide up.
-     */
     if ppt.y + cy >= minf.rcWork.bottom {
         ppt.y -= cy;
         reverse = true;
     }
 
-    /*
-     *  If too far right, then flip left.
-     */
-    //if ppt.x > minf.rcWork.right - cx {
     if ppt.x + cx >= minf.rcWork.right {
         ppt.x -= cx;
         rtl = true;
