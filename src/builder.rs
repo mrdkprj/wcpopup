@@ -7,6 +7,8 @@ use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA};
 use windows::Win32::{Foundation::HWND, UI::Controls::OpenThemeDataEx};
 
 static COUNTER: AtomicU32 = AtomicU32::new(400);
+
+/// Builder to create Menu.
 pub struct MenuBuilder {
     pub(crate) menu: Menu,
     items: Vec<MenuItem>,
@@ -15,6 +17,7 @@ pub struct MenuBuilder {
 }
 
 impl MenuBuilder {
+    /// Creates a new Menu for the specified window.
     pub fn new(parent: HWND) -> Self {
         let mut menu = Menu::default();
         menu.parent = parent;
@@ -27,6 +30,7 @@ impl MenuBuilder {
         }
     }
 
+    /// Creates a new Menu with the specified Theme for the specified window.
     pub fn new_with_theme(parent: HWND, theme: Theme) -> Self {
         let mut menu = Menu::default();
         menu.parent = parent;
@@ -41,6 +45,7 @@ impl MenuBuilder {
         }
     }
 
+    /// Creates a new Menu using the specified Config for the specified window.
     pub fn new_from_config(parent: HWND, config: Config) -> Self {
         let mut menu = Menu::default();
         menu.parent = parent;
@@ -73,6 +78,7 @@ impl MenuBuilder {
         }
     }
 
+    /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
         self.items.push(MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Text, None));
         self
@@ -83,6 +89,7 @@ impl MenuBuilder {
         self
     }
 
+    /// Adds a check MenuItem to Menu.
     pub fn check(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>) -> &Self {
         self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
         self
@@ -93,6 +100,7 @@ impl MenuBuilder {
         self
     }
 
+    /// Adds a radio MenuItem to Menu.
     pub fn radio(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
         self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
         self
@@ -103,11 +111,13 @@ impl MenuBuilder {
         self
     }
 
+    /// Adds a separator to Menu.
     pub fn separator(&mut self) -> &Self {
         self.items.push(MenuItem::new(self.menu.hwnd, "", "", "", "", "", create_state(None, None), MenuItemType::Separator, None));
         self
     }
 
+    /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, label: &str, disabled: Option<bool>) -> Self {
         let mut item = MenuItem::new(self.menu.hwnd, label, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
         /* Create builder */
@@ -120,12 +130,13 @@ impl MenuBuilder {
         builder
     }
 
+    /// Build Menu to make it ready to become visible.
+    /// Must call this function before showing Menu, otherwise nothing shows up.
     pub fn build(mut self) -> Result<Menu, Error> {
         let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
         let data = MenuData {
-            //index: self.menu.index,
             menu_type: self.menu_type,
             items: self.items.clone(),
             htheme: if is_main_menu {

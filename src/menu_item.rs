@@ -150,6 +150,7 @@ impl MenuItem {
     }
 }
 
+/// Builder to create Submenu Item.
 pub struct SubmenuItemBuilder {
     pub item: MenuItem,
     pub builder: MenuBuilder,
@@ -158,7 +159,7 @@ pub struct SubmenuItemBuilder {
 impl MenuItem {
     pub fn new_submenu_item(menu: &Menu, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
         let mut item = MenuItem::new(menu.hwnd, label, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
-        /* Create builder */
+        // Create builder
         let builder = MenuBuilder::new_from_menu(menu);
         item.submenu = Some(builder.menu.clone());
 
@@ -188,6 +189,7 @@ impl MenuItem {
     }
 }
 
+/// Selected MenuItem.
 #[derive(Debug, Clone, Serialize)]
 pub struct SelectedMenuItem {
     pub id: String,

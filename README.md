@@ -14,7 +14,7 @@ Supports dark/light theme and color/size configuration.
 
 # Usage
 Use ManuBuilder to create a Menu with MenuItems, and then call Menu.popup_at() to show Menu.  
-When an MenuItem is clicked, SelectedMenuItem data is returned.
+When a MenuItem is clicked, SelectedMenuItem data is returned.
 
 ```rust
 fn example(hwnd: HWND) {

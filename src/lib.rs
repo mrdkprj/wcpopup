@@ -1,3 +1,37 @@
+//! Context(popup) menu for Windows.
+//!
+//! You can customize text, border, background colors using [`ColorScheme`] and border size, margins, paddings using [`MenuSize`].
+//! Windows Theme(Dark/Light) is also sopported.
+//!
+//! ## Example
+//!
+//! Use ManuBuilder to create a Menu with MenuItems, and then call Menu.popup_at() to show Menu.
+//! When a MenuItem is clicked, SelectedMenuItem data is returned.
+//!
+//! ```no_run
+//! fn example(hwnd: HWND) {
+//!   let mut builder = MenuBuilder::new(hwnd);
+//!
+//!   builder.check("menu_item1", "Menu Label 1", "Value 1", true, None);
+//!   builder.separator();
+//!   builder.text_with_accelerator("menu_item2", "Menu Label 2", None, "Ctrl+P");
+//!   builder.text_with_accelerator("menu_item3", "Menu Label 3", None, "F11");
+//!   builder.text("menu_item4", "Menu Label 4", None);
+//!   builder.separator();
+//!   builder.text_with_accelerator("menu_item5", "Menu Label 5", None, "Ctrl+S");
+//!   builder.separator();
+//!
+//!   let mut submenu = builder.submenu("Submenu", None);
+//!   submenu.radio("submenu_item1", "Menu Label 1", "Menu Value 2", "Submenu1", true, None);
+//!   submenu.radio("submenu_item2", "Menu Label 2", "Menu Value 3", "Submenu1", false, None);
+//!   submenu.build().unwrap();
+//!
+//!   let menu = builder.build().unwrap();
+//!
+//!   let selected_item = menu.popup_at(100, 100);
+//! }
+//! ```
+
 mod builder;
 mod config;
 mod menu_item;
@@ -59,6 +93,7 @@ struct DisplayPoint {
     reverse: bool,
 }
 
+/// Popup Menu
 #[derive(Debug, Clone)]
 pub struct Menu {
     pub hwnd: HWND,
@@ -105,14 +140,17 @@ impl Menu {
         data.theme.clone()
     }
 
+    /// Sets the theme for Menu.
     pub fn set_theme(self, theme: Theme) {
         on_theme_change(self.hwnd, Some(theme));
     }
 
+    /// Gets all MenuItems of Menu.
     pub fn items(&self) -> Vec<MenuItem> {
         get_menu_data(self.hwnd).items.clone()
     }
 
+    /// Adds a MenuItem to the end of MenuItems.
     pub fn append(&mut self, mut item: MenuItem) {
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
@@ -120,6 +158,7 @@ impl Menu {
         Self::rebuild(self, data);
     }
 
+    /// Adds a MenuItem at the specified index.
     pub fn insert(&mut self, mut item: MenuItem, index: u32) {
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
@@ -127,6 +166,7 @@ impl Menu {
         Self::rebuild(self, data);
     }
 
+    /// Removes the MenuItem at the specified index.
     pub fn remove(&mut self, index: u32) {
         let data = get_menu_data_mut(self.hwnd);
         data.items.remove(index as usize);
@@ -177,8 +217,8 @@ impl Menu {
         width += size.horizontal_margin;
         height += size.vertical_margin;
 
-        width += size.border_width * 2;
-        height += size.border_width * 2;
+        width += size.border_size * 2;
+        height += size.border_size * 2;
 
         self.width = width;
         self.height = height;
@@ -189,6 +229,7 @@ impl Menu {
         })
     }
 
+    /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub fn popup_at(&self, x: i32, y: i32) -> Option<&SelectedMenuItem> {
         let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
         unsafe {
@@ -408,10 +449,10 @@ fn paint_background(hwnd: HWND, data: &MenuData) {
         let _ = DeleteObject(hbr);
 
         let mut menu_rect = RECT {
-            left: client_rect.left + data.size.border_width,
-            top: client_rect.top + data.size.border_width,
-            right: client_rect.right - data.size.border_width,
-            bottom: client_rect.bottom - data.size.border_width,
+            left: client_rect.left + data.size.border_size,
+            top: client_rect.top + data.size.border_size,
+            right: client_rect.right - data.size.border_size,
+            bottom: client_rect.bottom - data.size.border_size,
         };
 
         let hbr = CreateSolidBrush(COLORREF(scheme.background_color));
@@ -715,12 +756,12 @@ fn on_mouse_move(data: &mut MenuData, hwnd: HWND, screen_point: POINT) -> bool {
 }
 
 fn get_item_rect(data: &MenuData, item: &MenuItem) -> RECT {
-    let border_width = data.size.border_width;
+    let border_size = data.size.border_size;
     RECT {
-        left: border_width,
-        top: item.top + border_width,
-        right: data.width - border_width,
-        bottom: item.bottom + border_width,
+        left: border_size,
+        top: item.top + border_size,
+        right: data.width - border_size,
+        bottom: item.bottom + border_size,
     }
 }
 
