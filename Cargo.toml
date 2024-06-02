@@ -6,7 +6,7 @@ description = "Context(popup) menu for Windows"
 #documentation = ""
 readme = "README.md"
 categories = ["gui"]
-license = "Apache-2.0 OR MIT"
+license = "MIT"
 repository = "https://github.com/mrdkprj/rpopup"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
