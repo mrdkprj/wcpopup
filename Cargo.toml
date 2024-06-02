@@ -1,5 +1,5 @@
 [package]
-name = "rpopup"
+name = "wcpopup"
 version = "0.1.0"
 edition = "2021"
 description = "Context(popup) menu for Windows"
@@ -7,7 +7,7 @@ description = "Context(popup) menu for Windows"
 readme = "README.md"
 categories = ["gui"]
 license = "MIT"
-repository = "https://github.com/mrdkprj/rpopup"
+repository = "https://github.com/mrdkprj/wcpopup"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
