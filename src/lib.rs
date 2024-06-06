@@ -336,6 +336,11 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let data = get_menu_data_mut(hwnd);
             let index = index_from_point(hwnd, to_screen_point(window, lparam), data);
 
+            // If disabled, ignore
+            if (data.items[index as usize].state.0 & MENU_DISABLED.0) != 0 {
+                return LRESULT(0);
+            }
+
             // toggle checkbox
             if data.items[index as usize].menu_item_type == MenuItemType::Checkbox {
                 let checked = (data.items[index as usize].state.0 & MENU_CHECKED.0) != 0;
@@ -495,7 +500,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, theme: HTHEME) -> Resu
         let disabled = (item.state.0 & MENU_DISABLED.0) != 0;
         let checked = (item.state.0 & MENU_CHECKED.0) != 0;
 
-        if item.index == data.selected_index {
+        if item.index == data.selected_index && !disabled {
             unsafe { FillRect(dc, &mut item_rect, selected_color) };
         } else {
             unsafe { FillRect(dc, &mut item_rect, normal_color) };
