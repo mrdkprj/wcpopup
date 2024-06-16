@@ -54,7 +54,7 @@ use windows::{
         System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW},
         UI::{
             Controls::{CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_NORMAL, OTD_NONCLIENT},
-            Input::KeyboardAndMouse::{GetActiveWindow, ReleaseCapture, SendInput, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
+            Input::KeyboardAndMouse::{EnableWindow, GetActiveWindow, GetFocus, ReleaseCapture, SendInput, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindowRect, IsWindowVisible, KillTimer, PostMessageW, RegisterClassExW, SetTimer, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, HCURSOR, HICON, HWND_TOP, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WM_APP, WM_DESTROY,
@@ -232,12 +232,15 @@ impl Menu {
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub fn popup_at(&self, x: i32, y: i32) -> Option<&SelectedMenuItem> {
         let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
-        unsafe {
-            let _ = SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
-            let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
-            // Prevent mouse input on window beneath menu
-            SetCapture(self.hwnd);
-        };
+
+        let _ = unsafe { SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
+        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
+        // Prevent mouse input on window beneath menu
+        unsafe { SetCapture(self.hwnd) };
+
+        // Prevent keyboard input
+        let focus_window = unsafe { GetFocus() };
+        let _ = unsafe { EnableWindow(focus_window, false) };
 
         let mut msg = MSG::default();
         let mut selected_item: Option<&SelectedMenuItem> = None;
@@ -269,6 +272,8 @@ impl Menu {
 
         let _ = unsafe { ShowWindow(self.hwnd, SW_HIDE) };
 
+        let _ = unsafe { EnableWindow(focus_window, true) };
+
         selected_item
     }
 }
@@ -289,6 +294,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
                 CloseThemeData(data.htheme.unwrap()).unwrap();
             }
+            PostMessageW(window, WM_CLOSEMENU, WPARAM(0), LPARAM(0)).unwrap();
             DefWindowProcW(window, msg, wparam, lparam)
         }
 
