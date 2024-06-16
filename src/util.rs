@@ -107,7 +107,7 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
             unsafe { DrawTextW(dc, raw_text.as_mut_slice(), &mut text_rect, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_CALCRECT) };
             unsafe { SelectObject(dc, old_font) };
 
-            let mut cx = text_rect.right - text_rect.left;
+            let mut cx = (text_rect.right - text_rect.left) + 5;
 
             let mut log_font = LOGFONTW::default();
             unsafe { GetObjectW(font, size_of::<LOGFONTW>() as i32, Some(&mut log_font as *mut _ as *mut c_void)) };

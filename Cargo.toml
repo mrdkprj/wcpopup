@@ -1,6 +1,6 @@
 [package]
 name = "wcpopup"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "Context menu for Windows"
 documentation = "https://docs.rs/wcpopup/0.1.2/wcpopup/"
