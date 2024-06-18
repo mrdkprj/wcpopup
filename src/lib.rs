@@ -261,6 +261,13 @@ impl Menu {
                     break;
                 }
 
+                // Direct button down to Menu
+                WM_LBUTTONDOWN | WM_RBUTTONDOWN => {
+                    msg.hwnd = self.hwnd;
+                    let _ = unsafe { TranslateMessage(&msg) };
+                    unsafe { DispatchMessageW(&msg) };
+                }
+
                 _ => {
                     let _ = unsafe { TranslateMessage(&msg) };
                     unsafe { DispatchMessageW(&msg) };
