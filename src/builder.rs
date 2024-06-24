@@ -1,5 +1,9 @@
+#[cfg(feature = "accelerator")]
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+#[cfg(feature = "accelerator")]
+use crate::accelerator::create_haccel;
 use crate::{create_state, get_menu_data, Config, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
 use windows::core::{w, Error};
 use windows::Win32::UI::Controls::OTD_NONCLIENT;
@@ -80,34 +84,40 @@ impl MenuBuilder {
 
     /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Text, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Text, None);
+        self.items.push(item);
         self
     }
 
     pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, "", accelerator, "", create_state(disabled, None), MenuItemType::Text, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, "", accelerator, "", create_state(disabled, None), MenuItemType::Text, None);
+        self.items.push(item);
         self
     }
 
     /// Adds a check MenuItem to Menu.
     pub fn check(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, value, "", "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None);
+        self.items.push(item);
         self
     }
 
     pub fn check_with_accelerator(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, value, accelerator, "", create_state(disabled, Some(checked)), MenuItemType::Checkbox, None);
+        self.items.push(item);
         self
     }
 
     /// Adds a radio MenuItem to Menu.
     pub fn radio(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, "", name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, value, "", name, create_state(disabled, Some(checked)), MenuItemType::Radio, None);
+        self.items.push(item);
         self
     }
 
     pub fn radio_with_accelerator(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        self.items.push(MenuItem::new(self.menu.hwnd, id, label, value, accelerator, name, create_state(disabled, Some(checked)), MenuItemType::Radio, None));
+        let item = MenuItem::new(self.menu.hwnd, id, label, value, accelerator, name, create_state(disabled, Some(checked)), MenuItemType::Radio, None);
+        self.items.push(item);
         self
     }
 
@@ -136,7 +146,8 @@ impl MenuBuilder {
         let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
-        let data = MenuData {
+        #[allow(unused_mut)]
+        let mut data = MenuData {
             menu_type: self.menu_type,
             items: self.items.clone(),
             htheme: if is_main_menu {
@@ -149,6 +160,10 @@ impl MenuBuilder {
             } else {
                 None
             },
+            #[cfg(feature = "accelerator")]
+            haccel: None,
+            #[cfg(feature = "accelerator")]
+            accelerators: HashMap::new(),
             height: size.height,
             width: size.width,
             selected_index: -1,
@@ -162,8 +177,33 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
+        #[cfg(feature = "accelerator")]
+        if is_main_menu {
+            let mut accelerators = HashMap::new();
+            Self::collect_accelerators(&self.items, &mut accelerators);
+            if !accelerators.is_empty() {
+                data.haccel = create_haccel(&accelerators);
+            }
+            data.accelerators = accelerators;
+        }
+
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
         Ok(self.menu)
+    }
+
+    #[cfg(feature = "accelerator")]
+    fn collect_accelerators(items: &Vec<MenuItem>, accelerators: &mut HashMap<u16, String>) {
+        for item in items {
+            if item.menu_item_type == MenuItemType::Submenu {
+                let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
+                let data = get_menu_data(submenu_hwnd);
+                Self::collect_accelerators(&data.items, accelerators);
+            } else {
+                if !item.accelerator.is_empty() {
+                    accelerators.insert(item.uuid, item.accelerator.clone());
+                }
+            }
+        }
     }
 }

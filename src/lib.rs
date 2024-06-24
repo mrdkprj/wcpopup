@@ -32,33 +32,40 @@
 //! }
 //! ```
 
+mod accelerator;
 mod builder;
 mod config;
 mod menu_item;
 mod util;
+#[cfg(feature = "accelerator")]
+use accelerator::{create_haccel, destroy_haccel};
 pub use builder::*;
 pub use config::*;
 pub use menu_item::*;
 use util::*;
 
 use once_cell::sync::Lazy;
+#[cfg(feature = "accelerator")]
+use std::collections::HashMap;
 use std::{
     ffi::c_void,
     mem::{size_of, transmute},
 };
+#[cfg(feature = "accelerator")]
+use windows::Win32::UI::WindowsAndMessaging::{GetPropW, RemovePropW, SetPropW, TranslateAcceleratorW, HACCEL, WM_COMMAND, WM_KEYDOWN, WM_SYSCOMMAND};
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
     Win32::{
         Foundation::{COLORREF, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-        Graphics::Gdi::{BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect, InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, HFONT, HGDIOBJ, HPEN, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT},
+        Graphics::Gdi::{BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect, InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT},
         System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW},
         UI::{
             Controls::{CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_NORMAL, OTD_NONCLIENT},
-            Input::KeyboardAndMouse::{EnableWindow, GetActiveWindow, GetFocus, ReleaseCapture, SendInput, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
+            Input::KeyboardAndMouse::{GetActiveWindow, GetFocus, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, SetFocus, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindowRect, IsWindowVisible, KillTimer, PostMessageW, RegisterClassExW, SetTimer, SetWindowPos, ShowWindow, SystemParametersInfoW, TranslateMessage, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, HCURSOR, HICON, HWND_TOP, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WM_APP, WM_DESTROY,
-                WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindowVisible, KillTimer, PostMessageW, RegisterClassExW, SetForegroundWindow, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_CHILD, HCURSOR, HICON, HWND_TOP, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+                SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -66,13 +73,17 @@ use windows::{
 
 static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 
+#[cfg(feature = "accelerator")]
+const HOOK_DATA: &str = "WCPOPUP_HOOK_DATA";
 const LR_BUTTON_SIZE: i32 = 25;
 const SUBMENU_OFFSET: i32 = -5;
 const TIMER_ID: usize = 500;
 
 const WM_MENUSELECTED: u32 = WM_APP + 0x0001;
-const WM_CLOSEMENU: u32 = WM_APP + 0x0002;
-const WM_INACTIVATE: u32 = WM_APP + 0x0003;
+#[cfg(feature = "accelerator")]
+const WM_MENUCOMMAND: u32 = WM_APP + 0x002;
+const WM_CLOSEMENU: u32 = WM_APP + 0x0003;
+const WM_INACTIVATE: u32 = WM_APP + 0x0004;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuType {
@@ -126,6 +137,10 @@ struct MenuData {
     height: i32,
     visible_submenu_index: i32,
     theme: Theme,
+    #[cfg(feature = "accelerator")]
+    haccel: Option<HACCEL>,
+    #[cfg(feature = "accelerator")]
+    accelerators: HashMap<u16, String>,
     size: MenuSize,
     color: ThemeColor,
 }
@@ -152,25 +167,34 @@ impl Menu {
 
     /// Adds a MenuItem to the end of MenuItems.
     pub fn append(&mut self, mut item: MenuItem) {
+        #[cfg(feature = "accelerator")]
+        Self::reset_haccel(&self, &item, false);
+
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
         data.items.push(item);
-        Self::rebuild(self, data);
+        Self::recalculate(self, data);
     }
 
     /// Adds a MenuItem at the specified index.
     pub fn insert(&mut self, mut item: MenuItem, index: u32) {
+        #[cfg(feature = "accelerator")]
+        Self::reset_haccel(&self, &item, false);
+
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
         data.items.insert(index as usize, item);
-        Self::rebuild(self, data);
+        Self::recalculate(self, data);
     }
 
     /// Removes the MenuItem at the specified index.
     pub fn remove(&mut self, index: u32) {
         let data = get_menu_data_mut(self.hwnd);
-        data.items.remove(index as usize);
-        Self::rebuild(self, data);
+        #[allow(unused_variables)]
+        let removed_item = data.items.remove(index as usize);
+        Self::recalculate(self, data);
+        #[cfg(feature = "accelerator")]
+        Self::reset_haccel(&self, &removed_item, true);
     }
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
@@ -189,7 +213,44 @@ impl Menu {
         }
     }
 
-    fn rebuild(&mut self, data: &mut MenuData) {
+    #[cfg(feature = "accelerator")]
+    fn reset_haccel(&self, item: &MenuItem, should_remove: bool) {
+        if item.accelerator.is_empty() {
+            return;
+        }
+
+        let hwnd = if self.menu_type == MenuType::Main {
+            self.hwnd
+        } else {
+            unsafe { GetParent(self.hwnd) }
+        };
+
+        let data = get_menu_data_mut(hwnd);
+
+        let mut accelerators = data.accelerators.clone();
+
+        if should_remove {
+            accelerators.remove_entry(&item.uuid);
+        } else {
+            accelerators.insert(item.uuid, item.accelerator.clone());
+        }
+
+        if let Some(haccel) = data.haccel {
+            destroy_haccel(haccel);
+        }
+
+        if accelerators.is_empty() {
+            data.haccel = None;
+        } else {
+            data.haccel = create_haccel(&accelerators);
+        }
+
+        data.accelerators = accelerators;
+
+        set_menu_data(hwnd, data);
+    }
+
+    fn recalculate(&mut self, data: &mut MenuData) {
         let size = Self::calculate(self, &mut data.items, &data.size, data.theme).unwrap();
         data.width = size.width;
         data.height = size.height;
@@ -229,24 +290,59 @@ impl Menu {
         })
     }
 
+    fn start_popup(&self) -> Option<HWND> {
+        // Activate parent window
+        let _ = unsafe { SetForegroundWindow(self.parent) };
+        let _ = unsafe { SetActiveWindow(self.parent) };
+
+        // Try placing focus on parent window
+        let mut previous_focus_window = unsafe { SetFocus(self.parent) };
+        // If parent window fails to have focus, place focus on its child window
+        if self.parent != unsafe { GetFocus() } {
+            let child = unsafe { GetWindow(self.parent, GW_CHILD) };
+            if child != HWND(0) {
+                previous_focus_window = unsafe { SetFocus(child) };
+            }
+        }
+
+        #[cfg(feature = "accelerator")]
+        unsafe {
+            // Set this menu hwnd to parent's handle so that keydown message can be sent to this in keyboard hook
+            SetPropW(self.parent, PCWSTR::from_raw(encode_wide(HOOK_DATA).as_ptr()), windows::Win32::Foundation::HANDLE(self.hwnd.0)).unwrap()
+        };
+
+        if cfg!(feature = "accelerator") {
+            Some(previous_focus_window)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(feature = "accelerator")]
+    fn finish_popup(&self) {
+        let _ = unsafe { RemovePropW(self.parent, PCWSTR::from_raw(encode_wide(HOOK_DATA).as_ptr())) };
+    }
+
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub fn popup_at(&self, x: i32, y: i32) -> Option<&SelectedMenuItem> {
-        let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
+        // Prepare
+        #[allow(unused_variables)]
+        let previous_focus_window = Self::start_popup(self);
+        let process_id = unsafe { GetWindowThreadProcessId(self.hwnd, None) };
+        let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, process_id).unwrap() };
 
+        // Show menu window
+        let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
         let _ = unsafe { SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
         let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
         // Prevent mouse input on window beneath menu
         unsafe { SetCapture(self.hwnd) };
 
-        // Prevent keyboard input
-        let focus_window = unsafe { GetFocus() };
-        let _ = unsafe { EnableWindow(focus_window, false) };
-
         let mut msg = MSG::default();
         let mut selected_item: Option<&SelectedMenuItem> = None;
 
         while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
-            if self.parent != unsafe { GetActiveWindow() } {
+            if self.parent != unsafe { GetFocus() } && self.parent != unsafe { GetActiveWindow() } {
                 // Send WM_INACTIVATE message so that MenuData is initialized
                 let _ = unsafe { PostMessageW(self.hwnd, WM_INACTIVATE, WPARAM(0), LPARAM(0)) };
             }
@@ -257,11 +353,19 @@ impl Menu {
                     break;
                 }
 
+                #[cfg(feature = "accelerator")]
+                WM_MENUCOMMAND => {
+                    selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0) });
+                    // Put focus back to previous window
+                    let _ = unsafe { SetFocus(previous_focus_window.unwrap()) };
+                    break;
+                }
+
                 WM_CLOSEMENU => {
                     break;
                 }
 
-                // Direct button down to Menu
+                // Direct buttondown message to this window
                 WM_LBUTTONDOWN | WM_RBUTTONDOWN => {
                     msg.hwnd = self.hwnd;
                     let _ = unsafe { TranslateMessage(&msg) };
@@ -279,10 +383,35 @@ impl Menu {
 
         let _ = unsafe { ShowWindow(self.hwnd, SW_HIDE) };
 
-        let _ = unsafe { EnableWindow(focus_window, true) };
+        let _ = unsafe { UnhookWindowsHookEx(hook) };
+
+        #[cfg(feature = "accelerator")]
+        Self::finish_popup(self);
 
         selected_item
     }
+}
+
+pub type MyResult<T> = std::result::Result<T, Error>;
+
+unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // Prevent keyboard input
+    if ncode >= 0 {
+        #[cfg(feature = "accelerator")]
+        post_keydown(wparam, lparam);
+
+        return LRESULT(1);
+    }
+
+    CallNextHookEx(None, ncode, wparam, lparam)
+}
+
+#[cfg(feature = "accelerator")]
+fn post_keydown(wparam: WPARAM, lparam: LPARAM) {
+    let active_window = unsafe { GetActiveWindow() };
+    let data = unsafe { GetPropW(active_window, PCWSTR::from_raw(encode_wide(HOOK_DATA).as_ptr())) };
+
+    unsafe { PostMessageW(HWND(data.0), WM_KEYDOWN, wparam, lparam).unwrap() };
 }
 
 unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -301,6 +430,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
                 CloseThemeData(data.htheme.unwrap()).unwrap();
             }
+
+            #[cfg(feature = "accelerator")]
+            if data.menu_type == MenuType::Main && data.haccel.is_some() {
+                destroy_haccel(data.haccel.unwrap())
+            }
+
             PostMessageW(window, WM_CLOSEMENU, WPARAM(0), LPARAM(0)).unwrap();
             DefWindowProcW(window, msg, wparam, lparam)
         }
@@ -315,6 +450,40 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let data = get_menu_data(window);
             let theme = get_theme(window, data);
             on_paint(window, data, theme).unwrap();
+            LRESULT(0)
+        }
+
+        #[cfg(feature = "accelerator")]
+        WM_KEYDOWN => {
+            let data = get_menu_data(window);
+            let mut keydown_msg = MSG {
+                hwnd: window,
+                wParam: wparam,
+                lParam: lparam,
+                message: msg,
+                time: 0,
+                pt: POINT::default(),
+            };
+            TranslateAcceleratorW(window, data.haccel.unwrap(), &mut keydown_msg);
+            LRESULT(0)
+        }
+
+        #[cfg(feature = "accelerator")]
+        WM_COMMAND | WM_SYSCOMMAND => {
+            if HIWORD(wparam.0 as u32) != 1 {
+                return LRESULT(0);
+            }
+
+            let data = get_menu_data_mut(window);
+            let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
+            if let Some((data, index)) = maybe_index {
+                if on_menu_item_selected(data, index) {
+                    init_menu_data(window);
+                    let menu_item = SelectedMenuItem::from(&data.items[index]);
+                    PostMessageW(window, WM_MENUCOMMAND, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _)).unwrap();
+                }
+            }
+
             LRESULT(0)
         }
 
@@ -340,36 +509,26 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_LBUTTONUP | WM_RBUTTONUP => {
-            let hwnd_opt = get_hwnd_from_point(window, lparam);
-            if hwnd_opt.is_none() {
+            let maybe_hwnd = get_hwnd_from_point(window, lparam);
+            if maybe_hwnd.is_none() {
                 return LRESULT(0);
             }
 
-            let hwnd = hwnd_opt.unwrap();
+            let hwnd = maybe_hwnd.unwrap();
             let data = get_menu_data_mut(hwnd);
             let index = index_from_point(hwnd, to_screen_point(window, lparam), data);
 
-            // If disabled, ignore
-            if (data.items[index as usize].state.0 & MENU_DISABLED.0) != 0 {
+            if index < 0 {
                 return LRESULT(0);
             }
 
-            // toggle checkbox
-            if data.items[index as usize].menu_item_type == MenuItemType::Checkbox {
-                let checked = (data.items[index as usize].state.0 & MENU_CHECKED.0) != 0;
-                toggle_checked(&mut data.items[index as usize], !checked);
+            if on_menu_item_selected(data, index as usize) {
+                set_menu_data(hwnd, data);
+                init_menu_data(window);
+
+                let menu_item = SelectedMenuItem::from(&data.items[index as usize]);
+                PostMessageW(hwnd, WM_MENUSELECTED, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _)).unwrap();
             }
-
-            // toggle radio checkbox
-            if data.items[index as usize].menu_item_type == MenuItemType::Radio {
-                toggle_radio(data, index as usize);
-            }
-
-            set_menu_data(hwnd, data);
-            init_menu_data(window);
-
-            let menu_item = SelectedMenuItem::from(&data.items[index as usize]);
-            PostMessageW(hwnd, WM_MENUSELECTED, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _)).unwrap();
 
             LRESULT(0)
         }
@@ -388,6 +547,31 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         _ => DefWindowProcW(window, msg, wparam, lparam),
     }
+}
+
+fn on_menu_item_selected(data: &mut MenuData, index: usize) -> bool {
+    // If submenu, ignore
+    if data.items[index].menu_item_type == MenuItemType::Submenu {
+        return false;
+    }
+
+    // If disabled, ignore
+    if (data.items[index].state.0 & MENU_DISABLED.0) != 0 {
+        return false;
+    }
+
+    // toggle checkbox
+    if data.items[index].menu_item_type == MenuItemType::Checkbox {
+        let checked = (data.items[index].state.0 & MENU_CHECKED.0) != 0;
+        toggle_checked(&mut data.items[index], !checked);
+    }
+
+    // toggle radio checkbox
+    if data.items[index].menu_item_type == MenuItemType::Radio {
+        toggle_radio(data, index);
+    }
+
+    true
 }
 
 fn send_mouse_input(hwnd: HWND, msg: u32) {
@@ -439,6 +623,24 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
 
         _ => DefSubclassProc(window, msg, wparam, lparam),
     }
+}
+
+#[cfg(feature = "accelerator")]
+fn index_of_item(data: &mut MenuData, id: u16) -> Option<(&mut MenuData, usize)> {
+    for (index, item) in data.items.iter().enumerate() {
+        if item.menu_item_type == MenuItemType::Submenu {
+            let hwnd = item.submenu.as_ref().unwrap().hwnd;
+            let submenu_data = get_menu_data_mut(hwnd);
+            if let Some(index) = index_of_item(submenu_data, id) {
+                return Some(index);
+            }
+        } else {
+            if item.uuid == id {
+                return Some((data, index));
+            }
+        }
+    }
+    None
 }
 
 fn get_color_scheme(data: &MenuData) -> &ColorScheme {
@@ -572,11 +774,12 @@ fn draw_separator(dc: HDC, scheme: &ColorScheme, rect: RECT) -> Result<(), Error
 
     separator_rect.top += (rect.bottom - rect.top) / 2;
 
-    let pen: HPEN = unsafe { CreatePen(PS_SOLID, 1, COLORREF(scheme.border)) };
-    let old_pen: HGDIOBJ = unsafe { SelectObject(dc, pen) };
+    let pen = unsafe { CreatePen(PS_SOLID, 1, COLORREF(scheme.border)) };
+    let old_pen = unsafe { SelectObject(dc, pen) };
     let _ = unsafe { MoveToEx(dc, separator_rect.left, separator_rect.top, None) };
     let _ = unsafe { LineTo(dc, separator_rect.right, separator_rect.top) };
     unsafe { SelectObject(dc, old_pen) };
+    let _ = unsafe { DeleteObject(pen) };
 
     Ok(())
 }
@@ -592,8 +795,8 @@ fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, d
     }
 
     let menu_font = get_font(data.theme.clone(), &data.size)?;
-    let font: HFONT = unsafe { CreateFontIndirectW(&menu_font) };
-    let old_font: HGDIOBJ = unsafe { SelectObject(dc, font) };
+    let font = unsafe { CreateFontIndirectW(&menu_font) };
+    let old_font = unsafe { SelectObject(dc, font) };
 
     unsafe { DrawTextW(dc, &mut encode_wide(&item.label), &mut text_rect, DT_SINGLELINE | DT_LEFT | DT_VCENTER) };
 
@@ -603,6 +806,7 @@ fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, d
     }
 
     unsafe { SelectObject(dc, old_font) };
+    let _ = unsafe { DeleteObject(font) };
 
     Ok(())
 }
@@ -646,7 +850,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
             main_menu_rect.top + item.top - main_menu_data.size.vertical_margin
         };
 
-        SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_NOACTIVATE | SWP_NOOWNERZORDER).unwrap();
+        SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
         let _ = ShowWindow(submenu_hwnd, SW_SHOWNOACTIVATE);
     }
 }
@@ -887,7 +1091,7 @@ fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
 }
 
 fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
-    let class_name = w!("R_POPUPMENU");
+    let class_name = w!("WC_POPUP");
 
     let class = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,

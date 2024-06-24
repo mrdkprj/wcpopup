@@ -1,6 +1,6 @@
 [package]
 name = "wcpopup"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 description = "Context menu for Windows"
 documentation = "https://docs.rs/wcpopup/0.1.2/wcpopup/"
@@ -11,6 +11,9 @@ repository = "https://github.com/mrdkprj/wcpopup"
 exclude = [
     "/assets"
 ]
+
+[features]
+"accelerator" = []
 
 [package.metadata.docs.rs]
 default-target = "x86_64-pc-windows-msvc"

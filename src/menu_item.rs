@@ -1,3 +1,6 @@
+#[cfg(feature = "accelerator")]
+use std::sync::atomic::{AtomicU16, Ordering};
+
 use crate::{
     builder::MenuBuilder,
     create_state,
@@ -6,6 +9,9 @@ use crate::{
 };
 use serde::Serialize;
 use windows::Win32::Foundation::HWND;
+
+#[cfg(feature = "accelerator")]
+static UUID: AtomicU16 = AtomicU16::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuItemType {
@@ -33,13 +39,15 @@ pub struct MenuItem {
     pub menu_item_type: MenuItemType,
     pub submenu: Option<Menu>,
     pub(crate) hwnd: HWND,
+    #[cfg(feature = "accelerator")]
+    pub(crate) uuid: u16,
     pub(crate) index: i32,
     pub(crate) top: i32,
     pub(crate) bottom: i32,
 }
 
 impl MenuItem {
-    pub fn new(hwnd: HWND, id: &str, label: &str, value: &str, accelerator: &str, name: &str, state: MenuItemState, menu_item_type: MenuItemType, submenu: Option<Menu>) -> Self {
+    pub(crate) fn new(hwnd: HWND, id: &str, label: &str, value: &str, accelerator: &str, name: &str, state: MenuItemState, menu_item_type: MenuItemType, submenu: Option<Menu>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -50,6 +58,8 @@ impl MenuItem {
             menu_item_type,
             submenu,
             hwnd,
+            #[cfg(feature = "accelerator")]
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
             bottom: 0,
@@ -90,6 +100,8 @@ impl MenuItem {
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
             hwnd: HWND(0),
+            #[cfg(feature = "accelerator")]
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
             bottom: 0,
@@ -109,6 +121,8 @@ impl MenuItem {
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
             hwnd: HWND(0),
+            #[cfg(feature = "accelerator")]
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
             bottom: 0,
@@ -126,6 +140,8 @@ impl MenuItem {
             menu_item_type: MenuItemType::Radio,
             submenu: None,
             hwnd: HWND(0),
+            #[cfg(feature = "accelerator")]
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
             bottom: 0,
@@ -182,6 +198,8 @@ impl MenuItem {
             menu_item_type: MenuItemType::Separator,
             submenu: None,
             hwnd: HWND(0),
+            #[cfg(feature = "accelerator")]
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
             bottom: 0,

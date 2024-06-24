@@ -9,7 +9,7 @@ use windows::{
     Win32::{
         Foundation::{HWND, RECT},
         Globalization::lstrlenW,
-        Graphics::Gdi::{CreateFontIndirectW, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
+        Graphics::Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
         UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS},
     },
 };
@@ -131,6 +131,8 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
             cx -= unsafe { GetSystemMetrics(SM_CXMENUCHECK) - 1 };
 
             width = cx;
+
+            let _ = unsafe { DeleteObject(font) };
 
             unsafe { ReleaseDC(hwnd, dc) };
         }

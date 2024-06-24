@@ -39,3 +39,11 @@ fn example(hwnd: HWND) {
     let selected_item = menu.popup_at(100, 100);
 }
 ```
+# Accelerator
+Accelerators are used only to display available shortcut keys by default.  
+Use "accelerator" feature to treat accelerators as commands.  
+With this feature, when a shortcut key is pressed, the corresponding MenuItem is returned as the result of Menu.popup_at().  
+
+```rust
+features = ["accelerator"]
+```
