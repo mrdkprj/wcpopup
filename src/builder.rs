@@ -171,6 +171,12 @@ impl MenuBuilder {
             theme: self.config.theme,
             size: self.config.size.clone(),
             color: self.config.color.clone(),
+            thread_id: 0,
+            parent: if is_main_menu {
+                HWND(0)
+            } else {
+                self.menu.parent
+            },
         };
 
         if is_main_menu {
