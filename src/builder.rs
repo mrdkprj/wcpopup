@@ -1,11 +1,14 @@
 #[cfg(feature = "accelerator")]
 use std::collections::HashMap;
+use std::mem::size_of;
+use std::os::raw::c_void;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(feature = "accelerator")]
 use crate::accelerator::create_haccel;
-use crate::{create_state, get_menu_data, Config, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
+use crate::{create_state, get_menu_data, Config, Corner, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
 use windows::core::{w, Error};
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE};
 use windows::Win32::UI::Controls::OTD_NONCLIENT;
 use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA};
 use windows::Win32::{Foundation::HWND, UI::Controls::OpenThemeDataEx};
@@ -68,6 +71,7 @@ impl MenuBuilder {
             theme: data.theme,
             size: data.size.clone(),
             color: data.color.clone(),
+            corner: data.corner.clone(),
         };
 
         let mut menu = Menu::default();
@@ -171,6 +175,7 @@ impl MenuBuilder {
             theme: self.config.theme,
             size: self.config.size.clone(),
             color: self.config.color.clone(),
+            corner: self.config.corner.clone(),
             thread_id: 0,
             parent: if is_main_menu {
                 HWND(0)
@@ -193,9 +198,22 @@ impl MenuBuilder {
             data.accelerators = accelerators;
         }
 
+        if Self::is_win11() && self.config.corner == Corner::Round {
+            unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
+        }
+
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
         Ok(self.menu)
+    }
+
+    fn is_win11() -> bool {
+        let version = windows_version::OsVersion::current();
+        if version.major == 10 && version.build >= 21996 {
+            true
+        } else {
+            false
+        }
     }
 
     #[cfg(feature = "accelerator")]

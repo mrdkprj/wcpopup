@@ -1,18 +1,22 @@
 use crate::{MenuData, MenuItem, MenuItemState, MenuItemType, MenuSize, Theme, LR_BUTTON_SIZE, MENU_CHECKED, MENU_DISABLED, MENU_NORMAL};
+use once_cell::sync::Lazy;
 use std::{
     ffi::c_void,
     mem::{size_of, transmute},
     os::windows::ffi::OsStrExt,
 };
 use windows::{
-    core::{Error, PCWSTR},
+    core::{w, Error, PCSTR, PCWSTR},
     Win32::{
-        Foundation::{HWND, RECT},
+        Foundation::{HMODULE, HWND, RECT},
         Globalization::lstrlenW,
         Graphics::Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
+        System::LibraryLoader::{GetProcAddress, LoadLibraryW},
         UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS},
     },
 };
+
+static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 
 pub(crate) fn get_menu_data<'a>(hwnd: HWND) -> &'a MenuData {
     let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
@@ -162,4 +166,66 @@ pub(crate) fn get_font(theme: Theme, size: &MenuSize) -> Result<LOGFONTW, Error>
     }
 
     Ok(menu_font)
+}
+
+pub(crate) fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
+    const UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL: u16 = 133;
+    type AllowDarkModeForWindow = unsafe extern "system" fn(HWND, bool) -> bool;
+    static ALLOW_DARK_MODE_FOR_WINDOW: Lazy<Option<AllowDarkModeForWindow>> = Lazy::new(|| unsafe {
+        if HUXTHEME.is_invalid() {
+            return None;
+        }
+
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+    });
+
+    if let Some(_allow_dark_mode_for_window) = *ALLOW_DARK_MODE_FOR_WINDOW {
+        unsafe { _allow_dark_mode_for_window(hwnd, is_dark) };
+    }
+}
+
+pub(crate) fn set_preferred_app_mode(theme: Theme) {
+    #[allow(dead_code)]
+    #[repr(C)]
+    enum PreferredAppMode {
+        Default,
+        AllowDark,
+        ForceDark,
+        ForceLight,
+        Max,
+    }
+
+    const UXTHEME_SETPREFERREDAPPMODE_ORDINAL: u16 = 135;
+    type SetPreferredAppMode = unsafe extern "system" fn(PreferredAppMode) -> PreferredAppMode;
+    static SET_PREFERRED_APP_MODE: Lazy<Option<SetPreferredAppMode>> = Lazy::new(|| unsafe {
+        if HUXTHEME.is_invalid() {
+            return None;
+        }
+
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SETPREFERREDAPPMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+    });
+
+    if let Some(_set_preferred_app_mode) = *SET_PREFERRED_APP_MODE {
+        unsafe {
+            _set_preferred_app_mode(if theme == Theme::Dark {
+                PreferredAppMode::ForceDark
+            } else {
+                PreferredAppMode::ForceLight
+            })
+        };
+    }
+}
+
+pub(crate) fn should_apps_use_dark_mode() -> bool {
+    const UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL: u16 = 132;
+    type ShouldAppsUseDarkMode = unsafe extern "system" fn() -> bool;
+    static SHOULD_APPS_USE_DARK_MODE: Lazy<Option<ShouldAppsUseDarkMode>> = Lazy::new(|| unsafe {
+        if HUXTHEME.is_invalid() {
+            return None;
+        }
+
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+    });
+
+    SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)
 }

@@ -44,7 +44,6 @@ pub use config::*;
 pub use menu_item::*;
 use util::*;
 
-use once_cell::sync::Lazy;
 #[cfg(feature = "accelerator")]
 use std::collections::HashMap;
 use std::{
@@ -57,12 +56,12 @@ use windows::Win32::UI::{
     WindowsAndMessaging::{GetPropW, RemovePropW, SetPropW, TranslateAcceleratorW, HACCEL, WM_COMMAND, WM_KEYDOWN, WM_SYSCOMMAND},
 };
 use windows::{
-    core::{w, Error, PCSTR, PCWSTR},
+    core::{w, Error, PCWSTR},
     Win32::{
-        Foundation::{COLORREF, HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect, InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT},
         System::{
-            LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW},
+            LibraryLoader::GetModuleHandleW,
             Threading::{AttachThreadInput, GetCurrentThreadId},
         },
         UI::{
@@ -76,8 +75,6 @@ use windows::{
         },
     },
 };
-
-static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 
 #[cfg(feature = "accelerator")]
 const HOOK_DATA: &str = "WCPOPUP_HOOK_DATA";
@@ -149,6 +146,7 @@ struct MenuData {
     accelerators: HashMap<u16, String>,
     size: MenuSize,
     color: ThemeColor,
+    corner: Corner,
     thread_id: u32,
     parent: HWND,
 }
@@ -329,6 +327,7 @@ impl Menu {
 
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<SelectedMenuItem> {
+        println!("{:?}", windows_version::OsVersion::current());
         // Prepare
         let ui_thread_id = unsafe { GetWindowThreadProcessId(self.hwnd, None) };
         let current_thread_id = unsafe { GetCurrentThreadId() };
@@ -1206,36 +1205,7 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     let hwnd = unsafe { CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None) };
 
     allow_dark_mode_for_window(hwnd, theme == Theme::Dark);
+    set_preferred_app_mode(theme);
 
     Ok(hwnd)
-}
-
-fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
-    const UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL: u16 = 133;
-    type AllowDarkModeForWindow = unsafe extern "system" fn(HWND, bool) -> bool;
-    static ALLOW_DARK_MODE_FOR_WINDOW: Lazy<Option<AllowDarkModeForWindow>> = Lazy::new(|| unsafe {
-        if HUXTHEME.is_invalid() {
-            return None;
-        }
-
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
-    });
-
-    if let Some(_allow_dark_mode_for_window) = *ALLOW_DARK_MODE_FOR_WINDOW {
-        unsafe { _allow_dark_mode_for_window(hwnd, is_dark) };
-    }
-}
-
-fn should_apps_use_dark_mode() -> bool {
-    const UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL: u16 = 132;
-    type ShouldAppsUseDarkMode = unsafe extern "system" fn() -> bool;
-    static SHOULD_APPS_USE_DARK_MODE: Lazy<Option<ShouldAppsUseDarkMode>> = Lazy::new(|| unsafe {
-        if HUXTHEME.is_invalid() {
-            return None;
-        }
-
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
-    });
-
-    SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)
 }

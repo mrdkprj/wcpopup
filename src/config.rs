@@ -4,12 +4,19 @@ pub enum Theme {
     Light,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corner {
+    Round,
+    DoNotRound,
+}
+
 /// Menu configuration for Theme, Size and Color.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub theme: Theme,
     pub size: MenuSize,
     pub color: ThemeColor,
+    pub corner: Corner,
 }
 
 impl Default for Config {
@@ -18,6 +25,7 @@ impl Default for Config {
             theme: Theme::Light,
             size: MenuSize::default(),
             color: ThemeColor::default(),
+            corner: Corner::DoNotRound,
         }
     }
 }
