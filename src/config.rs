@@ -16,6 +16,7 @@ pub struct Config {
     pub theme: Theme,
     pub size: MenuSize,
     pub color: ThemeColor,
+    /// Effective starting with Windows 11 Build 22000
     pub corner: Corner,
 }
 

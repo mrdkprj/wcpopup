@@ -257,16 +257,20 @@ impl Menu {
     }
 
     fn recalculate(&mut self, data: &mut MenuData) {
-        let size = Self::calculate(self, &mut data.items, &data.size, data.theme).unwrap();
+        let size = Self::calculate(self, &mut data.items, &data.size, data.theme, data.corner).unwrap();
         data.width = size.width;
         data.height = size.height;
         set_menu_data(self.hwnd, data);
     }
 
-    fn calculate(&mut self, items: &mut Vec<MenuItem>, size: &MenuSize, theme: Theme) -> Result<Size, Error> {
+    fn calculate(&mut self, items: &mut Vec<MenuItem>, size: &MenuSize, theme: Theme, corner: Corner) -> Result<Size, Error> {
         // Add top and left margin
         let mut width = size.horizontal_margin;
         let mut height = size.vertical_margin;
+
+        if corner == Corner::Round {
+            height += 3;
+        }
 
         for i in 0..items.len() {
             let item = &mut items[i];
@@ -283,6 +287,10 @@ impl Menu {
         // Add bottom and right margin
         width += size.horizontal_margin;
         height += size.vertical_margin;
+
+        if corner == Corner::Round {
+            height += 3;
+        }
 
         width += size.border_size * 2;
         height += size.border_size * 2;
@@ -327,7 +335,6 @@ impl Menu {
 
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<SelectedMenuItem> {
-        println!("{:?}", windows_version::OsVersion::current());
         // Prepare
         let ui_thread_id = unsafe { GetWindowThreadProcessId(self.hwnd, None) };
         let current_thread_id = unsafe { GetCurrentThreadId() };

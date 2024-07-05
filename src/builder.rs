@@ -57,6 +57,7 @@ impl MenuBuilder {
         let mut menu = Menu::default();
         menu.parent = parent;
         menu.hwnd = menu.create_window(parent, config.theme);
+
         Self {
             menu,
             items: Vec::new(),
@@ -71,7 +72,11 @@ impl MenuBuilder {
             theme: data.theme,
             size: data.size.clone(),
             color: data.color.clone(),
-            corner: data.corner.clone(),
+            corner: if Self::is_win11() {
+                data.corner.clone()
+            } else {
+                Corner::DoNotRound
+            },
         };
 
         let mut menu = Menu::default();
@@ -147,7 +152,10 @@ impl MenuBuilder {
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
     pub fn build(mut self) -> Result<Menu, Error> {
-        let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme)?;
+        if !Self::is_win11() && self.config.corner == Corner::Round {
+            self.config.corner = Corner::DoNotRound;
+        }
+        let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme, self.config.corner)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
         #[allow(unused_mut)]
@@ -198,7 +206,7 @@ impl MenuBuilder {
             data.accelerators = accelerators;
         }
 
-        if Self::is_win11() && self.config.corner == Corner::Round {
+        if self.config.corner == Corner::Round {
             unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
         }
 
@@ -209,7 +217,7 @@ impl MenuBuilder {
 
     fn is_win11() -> bool {
         let version = windows_version::OsVersion::current();
-        if version.major == 10 && version.build >= 21996 {
+        if version.major == 10 && version.build >= 22000 {
             true
         } else {
             false
