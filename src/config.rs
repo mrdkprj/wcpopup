@@ -26,7 +26,7 @@ impl Default for Config {
             theme: Theme::Light,
             size: MenuSize::default(),
             color: ThemeColor::default(),
-            corner: Corner::DoNotRound,
+            corner: Corner::Round,
         }
     }
 }

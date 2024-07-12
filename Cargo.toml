@@ -1,9 +1,9 @@
 [package]
 name = "wcpopup"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 description = "Context menu for Windows"
-documentation = "https://docs.rs/wcpopup/0.1.7/wcpopup/"
+documentation = "https://docs.rs/wcpopup/0.1.10/wcpopup/"
 readme = "README.md"
 categories = ["gui"]
 license = "MIT"
@@ -27,7 +27,7 @@ once_cell = "1.19.0"
 windows-version = "0.1.1"
 
 [dependencies.windows]
-version = "0.56"
+version = "0.57"
 features = [
     "Foundation",
     "Win32_Graphics_Gdi",

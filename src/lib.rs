@@ -49,6 +49,7 @@ use std::collections::HashMap;
 use std::{
     ffi::c_void,
     mem::{size_of, transmute},
+    rc::Rc,
 };
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::{
@@ -69,8 +70,8 @@ use windows::{
             Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, SetFocus, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, PostMessageW, PostThreadMessageW, RegisterClassExW, SetForegroundWindow, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_CHILD, HCURSOR, HICON, HWND_TOP, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY,
-                SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, SetCursor, SetForegroundWindow, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_CHILD, HCURSOR, HICON, HWND_TOP, IDC_ARROW, MSG,
+                SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -133,7 +134,7 @@ impl Default for Menu {
 struct MenuData {
     menu_type: MenuType,
     items: Vec<MenuItem>,
-    htheme: Option<HTHEME>,
+    htheme: Option<Rc<HTHEME>>,
     win_subclass_id: Option<u32>,
     selected_index: i32,
     width: i32,
@@ -141,7 +142,7 @@ struct MenuData {
     visible_submenu_index: i32,
     theme: Theme,
     #[cfg(feature = "accelerator")]
-    haccel: Option<HACCEL>,
+    haccel: Option<Rc<HACCEL>>,
     #[cfg(feature = "accelerator")]
     accelerators: HashMap<u16, String>,
     size: MenuSize,
@@ -158,7 +159,7 @@ impl Menu {
 
     pub fn theme(&self) -> Theme {
         let data = get_menu_data(self.hwnd);
-        data.theme.clone()
+        data.theme
     }
 
     /// Sets the theme for Menu.
@@ -241,14 +242,13 @@ impl Menu {
             accelerators.insert(item.uuid, item.accelerator.clone());
         }
 
-        if let Some(haccel) = data.haccel {
-            destroy_haccel(haccel);
+        if let Some(haccel) = &data.haccel {
+            destroy_haccel(HACCEL(haccel.0));
         }
 
-        if accelerators.is_empty() {
-            data.haccel = None;
-        } else {
-            data.haccel = create_haccel(&accelerators);
+        match create_haccel(&accelerators) {
+            Some(accel) => data.haccel = Some(Rc::new(accel)),
+            None => data.haccel = None,
         }
 
         data.accelerators = accelerators;
@@ -318,6 +318,9 @@ impl Menu {
                 previous_focus_window = unsafe { SetFocus(child) };
             }
         }
+
+        let cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
+        let _ = unsafe { SetCursor(cursor) };
 
         #[cfg(feature = "accelerator")]
         unsafe {
@@ -496,12 +499,15 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let data = get_menu_data_mut(window);
             if data.menu_type == MenuType::Main {
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
-                CloseThemeData(data.htheme.unwrap()).unwrap();
+                let theme = get_theme(window, data);
+                CloseThemeData(theme).unwrap();
             }
 
             #[cfg(feature = "accelerator")]
-            if data.menu_type == MenuType::Main && data.haccel.is_some() {
-                destroy_haccel(data.haccel.unwrap())
+            if data.menu_type == MenuType::Main {
+                if let Some(accel) = &data.haccel {
+                    destroy_haccel(HACCEL(accel.0));
+                }
             }
 
             post_message(window, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
@@ -525,15 +531,18 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         #[cfg(feature = "accelerator")]
         WM_KEYDOWN => {
             let data = get_menu_data(window);
-            let mut keydown_msg = MSG {
-                hwnd: window,
-                wParam: wparam,
-                lParam: lparam,
-                message: msg,
-                time: 0,
-                pt: POINT::default(),
-            };
-            TranslateAcceleratorW(window, data.haccel.unwrap(), &mut keydown_msg);
+
+            if let Some(accel) = &data.haccel {
+                let mut keydown_msg = MSG {
+                    hwnd: window,
+                    wParam: wparam,
+                    lParam: lparam,
+                    message: msg,
+                    time: 0,
+                    pt: POINT::default(),
+                };
+                TranslateAcceleratorW(window, HACCEL(accel.0), &mut keydown_msg);
+            }
             LRESULT(0)
         }
 
@@ -698,11 +707,11 @@ fn send_mouse_input(hwnd: HWND, msg: u32) {
     }
 }
 
-unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _uidsubclass: usize, _dwrefdata: usize) -> LRESULT {
+unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, _uidsubclass: usize, dwrefdata: usize) -> LRESULT {
     match msg {
         WM_ACTIVATE => {
             if wparam == WPARAM(0) {
-                let hwnd = *transmute::<usize, &HWND>(_dwrefdata);
+                let hwnd = *transmute::<usize, &HWND>(dwrefdata);
                 if IsWindow(hwnd).as_bool() {
                     PostMessageW(hwnd, WM_INACTIVATE, WPARAM(0), LPARAM(0)).unwrap();
                 }
@@ -711,7 +720,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
         }
 
         WM_THEMECHANGED => {
-            let hwnd = transmute::<usize, &HWND>(_dwrefdata);
+            let hwnd = transmute::<usize, &HWND>(dwrefdata);
             on_theme_change(*hwnd, None);
             DefSubclassProc(window, msg, wparam, lparam)
         }
@@ -844,7 +853,6 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, theme: HTHEME) -> Resu
                 if item.menu_item_type == MenuItemType::Submenu {
                     let mut arrow_rect = item_rect.clone();
                     let arrow_size = unsafe { GetSystemMetrics(SM_CXHSCROLL) };
-                    text_rect.right -= arrow_size;
                     arrow_rect.left = item_rect.right - arrow_size;
 
                     // center vertically
@@ -1141,12 +1149,12 @@ fn init_menu_data(hwnd: HWND) {
 
 fn get_theme(hwnd: HWND, data: &MenuData) -> HTHEME {
     if data.htheme.is_some() {
-        return data.htheme.unwrap();
+        return HTHEME(data.htheme.as_ref().unwrap().0);
     }
 
     let parent = unsafe { GetParent(hwnd) };
     let parent_data = get_menu_data(parent);
-    parent_data.htheme.unwrap()
+    HTHEME(parent_data.htheme.as_ref().unwrap().0)
 }
 
 fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
@@ -1158,10 +1166,10 @@ fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
     allow_dark_mode_for_window(hwnd, is_dark);
 
     let data = get_menu_data_mut(hwnd);
-    let old_htheme = data.htheme.unwrap();
+    let old_htheme = get_theme(hwnd, data);
     unsafe { CloseThemeData(old_htheme).unwrap() };
     let htheme = unsafe { OpenThemeDataEx(hwnd, w!("Menu"), OTD_NONCLIENT) };
-    data.htheme = Some(htheme);
+    data.htheme = Some(Rc::new(htheme));
 
     data.theme = if is_dark {
         Theme::Dark
@@ -1171,7 +1179,8 @@ fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
     set_menu_data(hwnd, data);
     let _ = unsafe { UpdateWindow(hwnd) };
 
-    for item in &data.items {
+    for menu_item in &data.items {
+        let item = menu_item;
         if item.menu_item_type == MenuItemType::Submenu {
             let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
             let data = get_menu_data_mut(submenu_hwnd);
@@ -1210,6 +1219,7 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     let ex_style = WS_EX_TOOLWINDOW;
 
     let hwnd = unsafe { CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None) };
+    let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
     allow_dark_mode_for_window(hwnd, theme == Theme::Dark);
     set_preferred_app_mode(theme);

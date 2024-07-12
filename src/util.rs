@@ -20,16 +20,19 @@ static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.
 
 pub(crate) fn get_menu_data<'a>(hwnd: HWND) -> &'a MenuData {
     let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
-    unsafe { transmute::<isize, &MenuData>(userdata) }
+    let item_data_ptr = userdata as *const MenuData;
+    unsafe { &*item_data_ptr }
 }
 
 pub(crate) fn get_menu_data_mut<'a>(hwnd: HWND) -> &'a mut MenuData {
     let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
-    unsafe { transmute::<isize, &mut MenuData>(userdata) }
+    let item_data_ptr = userdata as *mut MenuData;
+    unsafe { &mut *item_data_ptr }
 }
 
 pub(crate) fn set_menu_data(hwnd: HWND, data: &mut MenuData) {
-    unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, transmute::<&mut MenuData, isize>(data)) };
+    //unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, transmute::<&mut MenuData, isize>(data)) };
+    unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -111,7 +114,7 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
             unsafe { DrawTextW(dc, raw_text.as_mut_slice(), &mut text_rect, DT_SINGLELINE | DT_LEFT | DT_VCENTER | DT_CALCRECT) };
             unsafe { SelectObject(dc, old_font) };
 
-            let mut cx = (text_rect.right - text_rect.left) + 5;
+            let mut cx = text_rect.right - text_rect.left;
 
             let mut log_font = LOGFONTW::default();
             unsafe { GetObjectW(font, size_of::<LOGFONTW>() as i32, Some(&mut log_font as *mut _ as *mut c_void)) };
@@ -176,7 +179,7 @@ pub(crate) fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
             return None;
         }
 
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_ALLOWDARKMODEFORWINDOW_ORDINAL as usize as *mut _)).map(|handle| transmute(handle))
     });
 
     if let Some(_allow_dark_mode_for_window) = *ALLOW_DARK_MODE_FOR_WINDOW {
@@ -202,7 +205,7 @@ pub(crate) fn set_preferred_app_mode(theme: Theme) {
             return None;
         }
 
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SETPREFERREDAPPMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SETPREFERREDAPPMODE_ORDINAL as usize as *mut _)).map(|handle| transmute(handle))
     });
 
     if let Some(_set_preferred_app_mode) = *SET_PREFERRED_APP_MODE {
@@ -224,7 +227,7 @@ pub(crate) fn should_apps_use_dark_mode() -> bool {
             return None;
         }
 
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| transmute(handle))
     });
 
     SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)

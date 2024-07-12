@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::mem::size_of;
 use std::os::raw::c_void;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(feature = "accelerator")]
@@ -152,18 +153,30 @@ impl MenuBuilder {
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
     pub fn build(mut self) -> Result<Menu, Error> {
-        if !Self::is_win11() && self.config.corner == Corner::Round {
-            self.config.corner = Corner::DoNotRound;
-        }
+        //let items: Vec<Rc<RefCell<MenuItem>>> = self.items.iter().map(|item| Rc::new(RefCell::new(item.clone()))).collect();
         let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme, self.config.corner)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
-        #[allow(unused_mut)]
-        let mut data = MenuData {
+        #[cfg(feature = "accelerator")]
+        let mut accelerators = HashMap::new();
+        #[cfg(feature = "accelerator")]
+        let mut haccel = None;
+        #[cfg(feature = "accelerator")]
+        if is_main_menu {
+            Self::collect_accelerators(&self.items, &mut accelerators);
+            if !accelerators.is_empty() {
+                match create_haccel(&accelerators) {
+                    Some(accel) => haccel = Some(Rc::new(accel)),
+                    None => haccel = None,
+                }
+            }
+        }
+
+        let data = MenuData {
             menu_type: self.menu_type,
             items: self.items.clone(),
             htheme: if is_main_menu {
-                Some(unsafe { OpenThemeDataEx(self.menu.hwnd, w!("Menu"), OTD_NONCLIENT) })
+                Some(unsafe { Rc::new(OpenThemeDataEx(self.menu.hwnd, w!("Menu"), OTD_NONCLIENT)) })
             } else {
                 None
             },
@@ -173,9 +186,9 @@ impl MenuBuilder {
                 None
             },
             #[cfg(feature = "accelerator")]
-            haccel: None,
+            haccel,
             #[cfg(feature = "accelerator")]
-            accelerators: HashMap::new(),
+            accelerators,
             height: size.height,
             width: size.width,
             selected_index: -1,
@@ -196,17 +209,7 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
-        #[cfg(feature = "accelerator")]
-        if is_main_menu {
-            let mut accelerators = HashMap::new();
-            Self::collect_accelerators(&self.items, &mut accelerators);
-            if !accelerators.is_empty() {
-                data.haccel = create_haccel(&accelerators);
-            }
-            data.accelerators = accelerators;
-        }
-
-        if self.config.corner == Corner::Round {
+        if Self::is_win11() && self.config.corner == Corner::Round {
             unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
         }
 
