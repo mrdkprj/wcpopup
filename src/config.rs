@@ -2,6 +2,7 @@
 pub enum Theme {
     Dark,
     Light,
+    System,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

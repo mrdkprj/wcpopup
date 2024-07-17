@@ -8,12 +8,13 @@ use std::{
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
     Win32::{
-        Foundation::{HMODULE, HWND, RECT},
+        Foundation::{FreeLibrary, HMODULE, HWND, RECT},
         Globalization::lstrlenW,
         Graphics::Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
         UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS},
     },
+    UI::ViewManagement::{UIColorType, UISettings},
 };
 
 static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
@@ -31,7 +32,6 @@ pub(crate) fn get_menu_data_mut<'a>(hwnd: HWND) -> &'a mut MenuData {
 }
 
 pub(crate) fn set_menu_data(hwnd: HWND, data: &mut MenuData) {
-    //unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, transmute::<&mut MenuData, isize>(data)) };
     unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
 }
 
@@ -46,11 +46,13 @@ pub(crate) fn decode_wide(wide: &Vec<u16>) -> String {
     String::from_utf16_lossy(w_str_slice)
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 pub(crate) fn LOWORD(dword: u32) -> u16 {
     (dword & 0xFFFF) as u16
 }
 
+#[allow(dead_code)]
 #[allow(non_snake_case)]
 pub(crate) fn HIWORD(dword: u32) -> u16 {
     ((dword & 0xFFFF_0000) >> 16) as u16
@@ -101,7 +103,7 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
 
         _ => {
             let dc = unsafe { GetDC(hwnd) };
-            let menu_font = get_font(theme, size)?;
+            let menu_font = get_font(theme, size, true)?;
             let font = unsafe { CreateFontIndirectW(&menu_font) };
             let old_font = unsafe { SelectObject(dc, font) };
             let mut text_rect = RECT::default();
@@ -148,7 +150,7 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
     Ok((width, height))
 }
 
-pub(crate) fn get_font(theme: Theme, size: &MenuSize) -> Result<LOGFONTW, Error> {
+pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Result<LOGFONTW, Error> {
     let mut info = NONCLIENTMETRICSW::default();
     info.cbSize = size_of::<NONCLIENTMETRICSW>() as u32;
     unsafe { SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, size_of::<NONCLIENTMETRICSW>() as u32, Some(&mut info as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0))? };
@@ -162,13 +164,27 @@ pub(crate) fn get_font(theme: Theme, size: &MenuSize) -> Result<LOGFONTW, Error>
     if size.font_weight.is_some() {
         menu_font.lfWeight = size.font_weight.unwrap();
     } else {
-        if theme == Theme::Dark {
+        let is_dark = if theme == Theme::System {
+            should_apps_use_dark_mode()
+        } else {
+            theme == Theme::Dark
+        };
+        if is_dark {
             // bold font
             menu_font.lfWeight = 700;
         }
     }
 
+    // When font is used for measurement, always use bold font
+    if for_measure {
+        menu_font.lfWeight = 700;
+    }
+
     Ok(menu_font)
+}
+
+pub(crate) fn free_library() {
+    let _ = unsafe { FreeLibrary(*HUXTHEME) };
 }
 
 pub(crate) fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
@@ -198,6 +214,12 @@ pub(crate) fn set_preferred_app_mode(theme: Theme) {
         Max,
     }
 
+    let preferred_theme = match theme {
+        Theme::Dark => PreferredAppMode::ForceDark,
+        Theme::Light => PreferredAppMode::ForceLight,
+        Theme::System => PreferredAppMode::AllowDark,
+    };
+
     const UXTHEME_SETPREFERREDAPPMODE_ORDINAL: u16 = 135;
     type SetPreferredAppMode = unsafe extern "system" fn(PreferredAppMode) -> PreferredAppMode;
     static SET_PREFERRED_APP_MODE: Lazy<Option<SetPreferredAppMode>> = Lazy::new(|| unsafe {
@@ -209,13 +231,24 @@ pub(crate) fn set_preferred_app_mode(theme: Theme) {
     });
 
     if let Some(_set_preferred_app_mode) = *SET_PREFERRED_APP_MODE {
-        unsafe {
-            _set_preferred_app_mode(if theme == Theme::Dark {
-                PreferredAppMode::ForceDark
-            } else {
-                PreferredAppMode::ForceLight
-            })
-        };
+        unsafe { _set_preferred_app_mode(preferred_theme) };
+    }
+    refresh_immersive_color_policy_state();
+}
+
+fn refresh_immersive_color_policy_state() {
+    const UXTHEME_REFRESHIMMERSIVECOLORPOLICYSTATE_ORDINAL: u16 = 104;
+    type RefreshImmersiveColorPolicyState = unsafe extern "system" fn();
+    static REFRESH_IMMERSIVE_COLOR_POLICY_STATE: Lazy<Option<RefreshImmersiveColorPolicyState>> = Lazy::new(|| unsafe {
+        if HUXTHEME.is_invalid() {
+            return None;
+        }
+
+        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_REFRESHIMMERSIVECOLORPOLICYSTATE_ORDINAL as usize as *mut _)).map(|handle| std::mem::transmute(handle))
+    });
+
+    if let Some(_refresh_immersive_color_policy_state) = *REFRESH_IMMERSIVE_COLOR_POLICY_STATE {
+        unsafe { _refresh_immersive_color_policy_state() }
     }
 }
 
@@ -231,4 +264,11 @@ pub(crate) fn should_apps_use_dark_mode() -> bool {
     });
 
     SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)
+}
+
+pub(crate) fn is_sys_dark_color() -> bool {
+    let settings = UISettings::new().unwrap();
+    let clr = settings.GetColorValue(UIColorType::Background).unwrap();
+    let sum: u32 = (5 * clr.G as u32) + (2 * clr.R as u32) + (clr.B as u32);
+    !(sum > (8 * 128))
 }

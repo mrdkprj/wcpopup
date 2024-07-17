@@ -70,8 +70,8 @@ use windows::{
             Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, SetFocus, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, SetCursor, SetForegroundWindow, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_CHILD, HCURSOR, HICON, HWND_TOP, IDC_ARROW, MSG,
-                SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCMOUSEMOVE, WM_PAINT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, SetCursor, SetForegroundWindow, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_CHILD, HCURSOR, HICON,
+                HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCMOUSEMOVE, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -82,12 +82,20 @@ const HOOK_DATA: &str = "WCPOPUP_HOOK_DATA";
 const LR_BUTTON_SIZE: i32 = 25;
 const SUBMENU_OFFSET: i32 = -5;
 const TIMER_ID: usize = 500;
+const FADE_EFFECT_TIME: u32 = 120;
 
 const WM_MENUSELECTED: u32 = WM_APP + 0x0001;
 #[cfg(feature = "accelerator")]
 const WM_MENUCOMMAND: u32 = WM_APP + 0x002;
 const WM_CLOSEMENU: u32 = WM_APP + 0x0003;
 const WM_INACTIVATE: u32 = WM_APP + 0x0004;
+
+#[derive(Debug, PartialEq, Eq)]
+enum ThemeChangeFactor {
+    SystemSetting,
+    User,
+    App,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuType {
@@ -134,7 +142,7 @@ impl Default for Menu {
 struct MenuData {
     menu_type: MenuType,
     items: Vec<MenuItem>,
-    htheme: Option<Rc<HTHEME>>,
+    h_theme: Option<Rc<HTHEME>>,
     win_subclass_id: Option<u32>,
     selected_index: i32,
     width: i32,
@@ -163,8 +171,8 @@ impl Menu {
     }
 
     /// Sets the theme for Menu.
-    pub fn set_theme(self, theme: Theme) {
-        on_theme_change(self.hwnd, Some(theme));
+    pub fn set_theme(&self, theme: Theme) {
+        on_theme_change(self.hwnd, Some(theme), ThemeChangeFactor::User);
     }
 
     /// Gets all MenuItems of Menu.
@@ -309,7 +317,6 @@ impl Menu {
         let _ = unsafe { SetForegroundWindow(self.parent) };
         let _ = unsafe { SetActiveWindow(self.parent) };
 
-        // Try placing focus on parent window
         let mut previous_focus_window = unsafe { SetFocus(self.parent) };
         // If parent window fails to have focus, place focus on its child window
         if self.parent != unsafe { GetFocus() } {
@@ -318,10 +325,6 @@ impl Menu {
                 previous_focus_window = unsafe { SetFocus(child) };
             }
         }
-
-        let cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
-        let _ = unsafe { SetCursor(cursor) };
-
         #[cfg(feature = "accelerator")]
         unsafe {
             // Set this menu hwnd to parent's handle so that keydown message can be sent to this in keyboard hook
@@ -343,15 +346,15 @@ impl Menu {
         let current_thread_id = unsafe { GetCurrentThreadId() };
         let _ = unsafe { AttachThreadInput(current_thread_id, ui_thread_id, true) };
 
+        #[allow(unused_variables)]
         let previous_focus_window = Self::start_popup(self);
         let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, ui_thread_id).unwrap() };
 
         // Show menu window
         let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
         let _ = unsafe { SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
-        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
-        // Prevent mouse input on window beneath menu
-        unsafe { SetCapture(self.hwnd) };
+        animate_show_window(self.hwnd);
+        set_capture(self.hwnd);
 
         let mut msg = MSG::default();
         let mut selected_item: Option<SelectedMenuItem> = None;
@@ -365,6 +368,7 @@ impl Menu {
                 match msg.message {
                     WM_MENUSELECTED => {
                         selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                        // Put focus back to previous window
                         let _ = unsafe { SetFocus(previous_focus_window) };
                         break;
                     }
@@ -404,6 +408,7 @@ impl Menu {
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
     pub fn popup_at(&self, x: i32, y: i32) -> Option<SelectedMenuItem> {
         // Prepare
+        #[allow(unused_variables)]
         let previous_focus_window = Self::start_popup(self);
         let ui_thread_id = unsafe { GetWindowThreadProcessId(self.hwnd, None) };
         let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, ui_thread_id).unwrap() };
@@ -411,9 +416,9 @@ impl Menu {
         // Show menu window
         let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
         let _ = unsafe { SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
-        let _ = unsafe { ShowWindow(self.hwnd, SW_SHOWNOACTIVATE) };
-        // Prevent mouse input on window beneath menu
-        unsafe { SetCapture(self.hwnd) };
+
+        animate_show_window(self.hwnd);
+        set_capture(self.hwnd);
 
         let mut msg = MSG::default();
         let mut selected_item: Option<SelectedMenuItem> = None;
@@ -422,6 +427,7 @@ impl Menu {
             match msg.message {
                 WM_MENUSELECTED => {
                     selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                    // Put focus back to previous window
                     let _ = unsafe { SetFocus(previous_focus_window) };
                     break;
                 }
@@ -465,6 +471,19 @@ impl Menu {
     }
 }
 
+fn animate_show_window(hwnd: HWND) {
+    let _ = unsafe { AnimateWindow(hwnd, FADE_EFFECT_TIME, AW_BLEND) };
+    let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
+}
+
+fn set_capture(hwnd: HWND) {
+    // Prevent mouse input on window beneath menu
+    unsafe { SetCapture(hwnd) };
+
+    let cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
+    let _ = unsafe { SetCursor(cursor) };
+}
+
 unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // Prevent keyboard input
     if ncode >= 0 {
@@ -496,11 +515,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_DESTROY => {
+            free_library();
             let data = get_menu_data_mut(window);
             if data.menu_type == MenuType::Main {
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
-                let theme = get_theme(window, data);
-                CloseThemeData(theme).unwrap();
+                let h_theme = get_h_theme(window, data);
+                CloseThemeData(h_theme).unwrap();
             }
 
             #[cfg(feature = "accelerator")]
@@ -515,16 +535,25 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             DefWindowProcW(window, msg, wparam, lparam)
         }
 
+        WM_PRINTCLIENT => {
+            let hdc = HDC(wparam.0 as isize);
+            let data = get_menu_data(window);
+            paint_background(window, data, Some(hdc));
+            let h_theme = get_h_theme(window, data);
+            paint(hdc, data, &data.items, h_theme).unwrap();
+            LRESULT(1)
+        }
+
         WM_ERASEBKGND => {
             let data = get_menu_data(window);
-            paint_background(window, data);
+            paint_background(window, data, None);
             LRESULT(1)
         }
 
         WM_PAINT => {
             let data = get_menu_data(window);
-            let theme = get_theme(window, data);
-            on_paint(window, data, theme).unwrap();
+            let h_theme = get_h_theme(window, data);
+            on_paint(window, data, h_theme).unwrap();
             LRESULT(0)
         }
 
@@ -594,7 +623,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
             let hwnd = maybe_hwnd.unwrap();
             let data = get_menu_data_mut(hwnd);
-            let index = index_from_point(hwnd, to_screen_point(window, lparam), data);
+            let index = index_from_point(hwnd, get_cursor_point(window, lparam), data);
 
             if index < 0 {
                 return LRESULT(0);
@@ -620,6 +649,16 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 send_mouse_input(window, msg);
                 return LRESULT(0);
             }
+            DefWindowProcW(window, msg, wparam, lparam)
+        }
+
+        WM_SETTINGCHANGE => {
+            let wide_string_ptr = lparam.0 as *const u16;
+            let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or(String::new());
+            if lparam_str == "ImmersiveColorSet" {
+                on_theme_change(window, None, ThemeChangeFactor::SystemSetting);
+            }
+
             DefWindowProcW(window, msg, wparam, lparam)
         }
 
@@ -721,7 +760,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
 
         WM_THEMECHANGED => {
             let hwnd = transmute::<usize, &HWND>(dwrefdata);
-            on_theme_change(*hwnd, None);
+            on_theme_change(*hwnd, None, ThemeChangeFactor::App);
             DefSubclassProc(window, msg, wparam, lparam)
         }
 
@@ -748,16 +787,26 @@ fn index_of_item(data: &mut MenuData, id: u16) -> Option<(&mut MenuData, usize)>
 }
 
 fn get_color_scheme(data: &MenuData) -> &ColorScheme {
-    if data.theme == Theme::Dark {
+    let is_dark = if data.theme == Theme::System {
+        is_sys_dark_color()
+    } else {
+        data.theme == Theme::Dark
+    };
+
+    if is_dark {
         &data.color.dark
     } else {
         &data.color.light
     }
 }
 
-fn paint_background(hwnd: HWND, data: &MenuData) {
+fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
     unsafe {
-        let dc = GetWindowDC(hwnd);
+        let dc = if hdc.is_none() {
+            GetWindowDC(hwnd)
+        } else {
+            hdc.unwrap()
+        };
 
         if dc.0 == 0 {
             return;
@@ -783,11 +832,13 @@ fn paint_background(hwnd: HWND, data: &MenuData) {
         FillRect(dc, &mut menu_rect, hbr);
         let _ = DeleteObject(hbr);
 
-        ReleaseDC(hwnd, dc);
+        if hdc.is_none() {
+            ReleaseDC(hwnd, dc);
+        }
     }
 }
 
-fn on_paint(hwnd: HWND, data: &MenuData, theme: HTHEME) -> Result<(), Error> {
+fn on_paint(hwnd: HWND, data: &MenuData, h_theme: HTHEME) -> Result<(), Error> {
     let mut paint_struct = PAINTSTRUCT::default();
     let dc = unsafe { BeginPaint(hwnd, &mut paint_struct) };
 
@@ -798,9 +849,9 @@ fn on_paint(hwnd: HWND, data: &MenuData, theme: HTHEME) -> Result<(), Error> {
     let index = index_from_rect(data, paint_struct.rcPaint);
 
     if index.is_none() {
-        paint(dc, data, &data.items, theme)?;
+        paint(dc, data, &data.items, h_theme)?;
     } else {
-        paint(dc, data, &vec![data.items[index.unwrap() as usize].clone()], theme)?;
+        paint(dc, data, &vec![data.items[index.unwrap() as usize].clone()], h_theme)?;
     }
 
     let _ = unsafe { EndPaint(hwnd, &mut paint_struct) };
@@ -808,7 +859,7 @@ fn on_paint(hwnd: HWND, data: &MenuData, theme: HTHEME) -> Result<(), Error> {
     Ok(())
 }
 
-fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, theme: HTHEME) -> Result<(), Error> {
+fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Result<(), Error> {
     let scheme = get_color_scheme(data);
     let selected_color = unsafe { CreateSolidBrush(COLORREF(scheme.hover_background_color)) };
     let normal_color = unsafe { CreateSolidBrush(COLORREF(scheme.background_color)) };
@@ -842,7 +893,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, theme: HTHEME) -> Resu
                     let _ = unsafe { OffsetRect(&mut rect, 0, ((item_rect.bottom - item_rect.top) - (rect.bottom - rect.top)) / 2) };
                     let mut check_rect = rect.clone();
                     let _ = unsafe { InflateRect(&mut check_rect as *mut _ as *mut RECT, -1, -1) };
-                    unsafe { DrawThemeBackgroundEx(theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &mut check_rect, None)? };
+                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &mut check_rect, None)? };
                 }
 
                 let mut text_rect = item_rect.clone();
@@ -857,7 +908,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, theme: HTHEME) -> Resu
 
                     // center vertically
                     let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _ as *mut RECT, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
-                    unsafe { DrawThemeBackgroundEx(theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &mut arrow_rect, None)? };
+                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &mut arrow_rect, None)? };
                 }
 
                 draw_menu_text(dc, scheme, &text_rect, item, data, disabled)?;
@@ -897,7 +948,7 @@ fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, d
         unsafe { SetTextColor(dc, COLORREF(scheme.color)) };
     }
 
-    let menu_font = get_font(data.theme.clone(), &data.size)?;
+    let menu_font = get_font(data.theme.clone(), &data.size, false)?;
     let font = unsafe { CreateFontIndirectW(&menu_font) };
     let old_font = unsafe { SelectObject(dc, font) };
 
@@ -954,7 +1005,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         };
 
         SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
-        let _ = ShowWindow(submenu_hwnd, SW_SHOWNOACTIVATE);
+        animate_show_window(submenu_hwnd);
     }
 }
 
@@ -1070,11 +1121,9 @@ fn get_item_rect(data: &MenuData, item: &MenuItem) -> RECT {
     }
 }
 
-fn to_screen_point(hwnd: HWND, lparam: LPARAM) -> POINT {
+fn get_cursor_point(_hwnd: HWND, _lparam: LPARAM) -> POINT {
     let mut pt = POINT::default();
-    pt.x = LOWORD(lparam.0 as u32) as i32;
-    pt.y = HIWORD(lparam.0 as u32) as i32;
-    let _ = unsafe { ClientToScreen(hwnd, &mut pt) };
+    unsafe { GetCursorPos(&mut pt).unwrap() };
     pt
 }
 
@@ -1118,7 +1167,7 @@ fn get_hwnd_from_point(hwnd: HWND, lparam: LPARAM) -> Option<HWND> {
         HWND(0)
     };
 
-    let pt = to_screen_point(hwnd, lparam);
+    let pt = get_cursor_point(hwnd, lparam);
 
     let window = unsafe { WindowFromPoint(pt) };
 
@@ -1147,35 +1196,72 @@ fn init_menu_data(hwnd: HWND) {
     set_menu_data(hwnd, data);
 }
 
-fn get_theme(hwnd: HWND, data: &MenuData) -> HTHEME {
-    if data.htheme.is_some() {
-        return HTHEME(data.htheme.as_ref().unwrap().0);
+fn get_h_theme(hwnd: HWND, data: &MenuData) -> HTHEME {
+    if data.h_theme.is_some() {
+        return HTHEME(data.h_theme.as_ref().unwrap().0);
     }
 
     let parent = unsafe { GetParent(hwnd) };
     let parent_data = get_menu_data(parent);
-    HTHEME(parent_data.htheme.as_ref().unwrap().0)
+    HTHEME(parent_data.h_theme.as_ref().unwrap().0)
 }
 
-fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
-    let is_dark = if theme.is_some() {
-        theme.unwrap() == Theme::Dark
-    } else {
-        should_apps_use_dark_mode()
-    };
-    allow_dark_mode_for_window(hwnd, is_dark);
-
+fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) {
     let data = get_menu_data_mut(hwnd);
-    let old_htheme = get_theme(hwnd, data);
-    unsafe { CloseThemeData(old_htheme).unwrap() };
-    let htheme = unsafe { OpenThemeDataEx(hwnd, w!("Menu"), OTD_NONCLIENT) };
-    data.htheme = Some(Rc::new(htheme));
+    if data.menu_type == MenuType::Submenu {
+        return;
+    }
 
-    data.theme = if is_dark {
-        Theme::Dark
-    } else {
-        Theme::Light
+    let current_them = data.theme;
+
+    // Don't respont to setting change event unless theme is System
+    if current_them != Theme::System && factor == ThemeChangeFactor::SystemSetting {
+        return;
+    }
+
+    let should_be_dark = match factor {
+        ThemeChangeFactor::User => {
+            let preferred_theme = maybe_preferred_theme.unwrap();
+            if preferred_theme == Theme::System {
+                is_sys_dark_color()
+            } else {
+                preferred_theme == Theme::Dark
+            }
+        }
+        ThemeChangeFactor::App => {
+            if current_them == Theme::System {
+                is_sys_dark_color()
+            } else {
+                should_apps_use_dark_mode()
+            }
+        }
+        ThemeChangeFactor::SystemSetting => is_sys_dark_color(),
     };
+
+    let new_theme = match maybe_preferred_theme {
+        Some(preferred_theme) => preferred_theme,
+        None => {
+            if current_them == Theme::System {
+                current_them
+            } else {
+                if should_be_dark {
+                    Theme::Dark
+                } else {
+                    Theme::Light
+                }
+            }
+        }
+    };
+
+    allow_dark_mode_for_window(hwnd, should_be_dark);
+    set_preferred_app_mode(new_theme);
+
+    let old_htheme = get_h_theme(hwnd, data);
+    unsafe { CloseThemeData(old_htheme).unwrap() };
+    let h_theme = unsafe { OpenThemeDataEx(hwnd, w!("Menu"), OTD_NONCLIENT) };
+    data.h_theme = Some(Rc::new(h_theme));
+
+    data.theme = new_theme;
     set_menu_data(hwnd, data);
     let _ = unsafe { UpdateWindow(hwnd) };
 
@@ -1184,11 +1270,7 @@ fn on_theme_change(hwnd: HWND, theme: Option<Theme>) {
         if item.menu_item_type == MenuItemType::Submenu {
             let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
             let data = get_menu_data_mut(submenu_hwnd);
-            data.theme = if is_dark {
-                Theme::Dark
-            } else {
-                Theme::Light
-            };
+            data.theme = new_theme;
             set_menu_data(submenu_hwnd, data);
             let _ = unsafe { UpdateWindow(submenu_hwnd) };
         }
@@ -1221,7 +1303,12 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     let hwnd = unsafe { CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None) };
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
-    allow_dark_mode_for_window(hwnd, theme == Theme::Dark);
+    let should_be_dark = if theme == Theme::System {
+        is_sys_dark_color()
+    } else {
+        theme == Theme::Dark
+    };
+    allow_dark_mode_for_window(hwnd, should_be_dark);
     set_preferred_app_mode(theme);
 
     Ok(hwnd)

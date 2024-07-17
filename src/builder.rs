@@ -175,7 +175,7 @@ impl MenuBuilder {
         let data = MenuData {
             menu_type: self.menu_type,
             items: self.items.clone(),
-            htheme: if is_main_menu {
+            h_theme: if is_main_menu {
                 Some(unsafe { Rc::new(OpenThemeDataEx(self.menu.hwnd, w!("Menu"), OTD_NONCLIENT)) })
             } else {
                 None
