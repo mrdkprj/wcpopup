@@ -40,8 +40,9 @@ fn example(hwnd: HWND) {
 }
 ```
 > [!NOTE]
-> WebView2 may receive all keyboard input instead of its parent window(https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703).  
-> Using WebView2, you may need to enable the feature flag("--enable-features=msWebView2BrowserHitTransparent").
+> WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)).    
+> Using WebView2, you may need to enable the feature flag.
+> >--enable-features=msWebView2BrowserHitTransparent
 
 ## Accelerator
 Accelerators are used only to display available shortcut keys by default.  
