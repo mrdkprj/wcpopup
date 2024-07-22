@@ -11,6 +11,7 @@ use crate::{create_state, get_menu_data, Config, Corner, Menu, MenuData, MenuIte
 use windows::core::{w, Error};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE};
 use windows::Win32::UI::Controls::OTD_NONCLIENT;
+
 use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA};
 use windows::Win32::{Foundation::HWND, UI::Controls::OpenThemeDataEx};
 
@@ -73,11 +74,7 @@ impl MenuBuilder {
             theme: data.theme,
             size: data.size.clone(),
             color: data.color.clone(),
-            corner: if Self::is_win11() {
-                data.corner.clone()
-            } else {
-                Corner::DoNotRound
-            },
+            corner: data.corner.clone(),
         };
 
         let mut menu = Menu::default();
@@ -153,7 +150,6 @@ impl MenuBuilder {
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
     pub fn build(mut self) -> Result<Menu, Error> {
-        //let items: Vec<Rc<RefCell<MenuItem>>> = self.items.iter().map(|item| Rc::new(RefCell::new(item.clone()))).collect();
         let size = self.menu.calculate(&mut self.items, &self.config.size, self.config.theme, self.config.corner)?;
         let is_main_menu = self.menu_type == MenuType::Main;
 
