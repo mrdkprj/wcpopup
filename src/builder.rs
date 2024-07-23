@@ -9,7 +9,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::accelerator::create_haccel;
 use crate::{create_state, get_menu_data, Config, Corner, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
 use windows::core::{w, Error};
-use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE};
+use windows::Win32::Foundation::COLORREF;
+use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE};
 use windows::Win32::UI::Controls::OTD_NONCLIENT;
 
 use windows::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA};
@@ -205,8 +206,14 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
-        if Self::is_win11() && self.config.corner == Corner::Round {
-            unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
+        if Self::is_win11() {
+            if self.config.corner == Corner::Round {
+                unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
+            }
+
+            if self.config.size.border_size == 0 {
+                unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const c_void, size_of::<COLORREF>() as u32).unwrap() };
+            }
         }
 
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
