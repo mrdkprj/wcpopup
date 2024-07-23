@@ -211,9 +211,7 @@ impl MenuBuilder {
                 unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
             }
 
-            if self.config.size.border_size == 0 {
-                unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const c_void, size_of::<COLORREF>() as u32).unwrap() };
-            }
+            unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const c_void, size_of::<COLORREF>() as u32).unwrap() };
         }
 
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
