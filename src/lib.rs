@@ -67,8 +67,8 @@ use windows::{
             Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN},
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetSystemMetrics, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, HCURSOR,
-                HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_PARENT,
+                GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -718,9 +718,20 @@ fn on_menu_item_selected(data: &mut MenuData, index: usize) -> bool {
     true
 }
 
+fn get_parent_window(child: HWND) -> HWND {
+    let owner = unsafe { GetWindow(child, GW_OWNER) };
+
+    if owner.0 != 0 {
+        return owner;
+    }
+
+    unsafe { GetAncestor(child, GA_PARENT) }
+}
+
 fn send_mouse_input(hwnd: HWND, msg: u32) {
     let mut count = 0;
-    let mut parent = unsafe { GetParent(hwnd) };
+    let mut parent = get_parent_window(hwnd);
+
     let mut cursor_point = POINT::default();
     let _ = unsafe { GetCursorPos(&mut cursor_point) };
     while parent.0 != 0 {
@@ -729,7 +740,7 @@ fn send_mouse_input(hwnd: HWND, msg: u32) {
         if unsafe { PtInRect(&mut rect as *const _ as _, cursor_point) }.as_bool() {
             count += 1;
         }
-        parent = unsafe { GetParent(parent) };
+        parent = get_parent_window(parent);
     }
 
     if count > 0 {
