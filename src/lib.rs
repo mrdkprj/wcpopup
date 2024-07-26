@@ -187,7 +187,7 @@ impl Menu {
     /// Adds a MenuItem to the end of MenuItems.
     pub fn append(&mut self, mut item: MenuItem) {
         #[cfg(feature = "accelerator")]
-        Self::reset_haccel(&self, &item, false);
+        Self::reset_haccel(self, &item, false);
 
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
@@ -198,7 +198,7 @@ impl Menu {
     /// Adds a MenuItem at the specified index.
     pub fn insert(&mut self, mut item: MenuItem, index: u32) {
         #[cfg(feature = "accelerator")]
-        Self::reset_haccel(&self, &item, false);
+        Self::reset_haccel(self, &item, false);
 
         let data = get_menu_data_mut(self.hwnd);
         item.hwnd = self.hwnd;
@@ -213,7 +213,7 @@ impl Menu {
         let removed_item = data.items.remove(index as usize);
         Self::recalculate(self, data);
         #[cfg(feature = "accelerator")]
-        Self::reset_haccel(&self, &removed_item, true);
+        Self::reset_haccel(self, &removed_item, true);
     }
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
@@ -275,21 +275,20 @@ impl Menu {
         set_menu_data(self.hwnd, data);
     }
 
-    fn calculate(&mut self, items: &mut Vec<MenuItem>, size: &MenuSize, theme: Theme, corner: Corner) -> Result<Size, Error> {
+    fn calculate(&mut self, items: &mut [MenuItem], size: &MenuSize, theme: Theme, corner: Corner) -> Result<Size, Error> {
         // Add top and left margin
-        let mut width = size.horizontal_margin;
+        let mut width = 0;
         let mut height = size.vertical_margin;
 
         if corner == Corner::Round {
             height += ROUND_CORNER_MARGIN;
         }
 
-        for i in 0..items.len() {
-            let item = &mut items[i];
-            item.index = i as i32;
+        for (index, item) in items.iter_mut().enumerate() {
+            item.index = index as i32;
 
             item.top = height;
-            let (item_width, item_height) = measure_item(self.hwnd, size, &item, theme)?;
+            let (item_width, item_height) = measure_item(self.hwnd, size, item, theme)?;
             item.bottom = item.top + item_height;
 
             width = std::cmp::max(width, item_width);
@@ -297,7 +296,7 @@ impl Menu {
         }
 
         // Add bottom and right margin
-        width += size.horizontal_margin;
+        width += size.horizontal_margin * 2;
         height += size.vertical_margin;
 
         if corner == Corner::Round {
@@ -485,7 +484,7 @@ unsafe extern "system" fn mouse_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM)
 
         match wparam.0 as u32 {
             // Do not direct buttondown event since it is sent to default_window_proc
-            WM_LBUTTONDOWN | WM_RBUTTONDOWN => {}
+            WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONUP => {}
             _ => {
                 let _ = unsafe { PostMessageW(HWND(data.0), wparam.0 as u32, WPARAM(0), LPARAM(0)) };
             }
@@ -543,10 +542,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_KEYDOWN => {
-            let should_close_menu = match VIRTUAL_KEY(wparam.0 as u16) {
-                VK_ESCAPE | VK_LWIN | VK_RWIN => true,
-                _ => false,
-            };
+            let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN);
 
             if should_close_menu {
                 let id = init_menu_data(window);
@@ -558,7 +554,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let data = get_menu_data(window);
             #[cfg(feature = "accelerator")]
             if let Some(accel) = &data.haccel {
-                let mut keydown_msg = MSG {
+                let keydown_msg = MSG {
                     hwnd: window,
                     wParam: wparam,
                     lParam: lparam,
@@ -566,7 +562,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                     time: 0,
                     pt: POINT::default(),
                 };
-                TranslateAcceleratorW(window, HACCEL(accel.0), &mut keydown_msg);
+                TranslateAcceleratorW(window, HACCEL(accel.0), &keydown_msg);
             }
 
             LRESULT(0)
@@ -609,12 +605,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         WM_MOUSEWHEEL => {
             let id = init_menu_data(window);
             post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
-            return LRESULT(0);
+            LRESULT(0)
         }
 
         WM_SETTINGCHANGE => {
             let wide_string_ptr = lparam.0 as *const u16;
-            let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or(String::new());
+            let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or_default();
             if lparam_str == "ImmersiveColorSet" {
                 on_theme_change(window, None, ThemeChangeFactor::SystemSetting);
             }
@@ -825,10 +821,8 @@ fn index_of_item(data: &mut MenuData, id: u16) -> Option<(&mut MenuData, usize)>
             if let Some(index) = index_of_item(submenu_data, id) {
                 return Some(index);
             }
-        } else {
-            if item.uuid == id {
-                return Some((data, index));
-            }
+        } else if item.uuid == id {
+            return Some((data, index));
         }
     }
     None
@@ -850,10 +844,10 @@ fn get_color_scheme(data: &MenuData) -> &ColorScheme {
 
 fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
     unsafe {
-        let dc = if hdc.is_none() {
-            GetWindowDC(hwnd)
+        let dc = if let Some(hdc) = hdc {
+            hdc
         } else {
-            hdc.unwrap()
+            GetWindowDC(hwnd)
         };
 
         if dc.0 == 0 {
@@ -866,10 +860,10 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         GetClientRect(hwnd, &mut client_rect).unwrap();
 
         let hbr = CreateSolidBrush(COLORREF(scheme.border));
-        FillRect(dc, &mut client_rect, hbr);
+        FillRect(dc, &client_rect, hbr);
         let _ = DeleteObject(hbr);
 
-        let mut menu_rect = RECT {
+        let menu_rect = RECT {
             left: client_rect.left + data.size.border_size,
             top: client_rect.top + data.size.border_size,
             right: client_rect.right - data.size.border_size,
@@ -877,7 +871,7 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         };
 
         let hbr = CreateSolidBrush(COLORREF(scheme.background_color));
-        FillRect(dc, &mut menu_rect, hbr);
+        FillRect(dc, &menu_rect, hbr);
         let _ = DeleteObject(hbr);
 
         if hdc.is_none() {
@@ -902,7 +896,7 @@ fn on_paint(hwnd: HWND, data: &MenuData, h_theme: HTHEME) -> Result<(), Error> {
         paint(dc, data, &vec![data.items[index.unwrap() as usize].clone()], h_theme)?;
     }
 
-    let _ = unsafe { EndPaint(hwnd, &mut paint_struct) };
+    let _ = unsafe { EndPaint(hwnd, &paint_struct) };
 
     Ok(())
 }
@@ -913,20 +907,30 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Re
     let normal_color = unsafe { CreateSolidBrush(COLORREF(scheme.background_color)) };
 
     for item in items {
-        let mut item_rect = get_item_rect(data, item);
+        let whole_item_rect = get_item_rect(data, item);
 
         let disabled = (item.state.0 & MENU_DISABLED.0) != 0;
         let checked = (item.state.0 & MENU_CHECKED.0) != 0;
 
         if item.index == data.selected_index && !disabled {
-            unsafe { FillRect(dc, &mut item_rect, selected_color) };
+            unsafe { FillRect(dc, &whole_item_rect, selected_color) };
         } else {
-            unsafe { FillRect(dc, &mut item_rect, normal_color) };
+            unsafe { FillRect(dc, &whole_item_rect, normal_color) };
         }
+
+        // Rect for text, checkmark and submenu icon
+        let border_size = data.size.border_size;
+        let item_rect = RECT {
+            left: data.size.horizontal_margin + border_size,
+            top: item.top + border_size,
+            right: data.width - data.size.horizontal_margin - border_size,
+            bottom: item.bottom + border_size,
+        };
 
         match item.menu_item_type {
             MenuItemType::Separator => {
-                draw_separator(dc, scheme, item_rect)?;
+                // Use whole item rect to draw from left to right
+                draw_separator(dc, scheme, whole_item_rect)?;
             }
 
             _ => {
@@ -939,24 +943,24 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Re
                     };
                     // center vertically
                     let _ = unsafe { OffsetRect(&mut rect, 0, ((item_rect.bottom - item_rect.top) - (rect.bottom - rect.top)) / 2) };
-                    let mut check_rect = rect.clone();
-                    let _ = unsafe { InflateRect(&mut check_rect as *mut _ as *mut RECT, -1, -1) };
-                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &mut check_rect, None)? };
+                    let mut check_rect = rect;
+                    let _ = unsafe { InflateRect(&mut check_rect as *mut _, -1, -1) };
+                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &check_rect, None)? };
                 }
 
-                let mut text_rect = item_rect.clone();
+                let mut text_rect = item_rect;
                 // Keep space for check mark and submenu mark
                 text_rect.left += LR_BUTTON_SIZE;
                 text_rect.right -= LR_BUTTON_SIZE;
 
                 if item.menu_item_type == MenuItemType::Submenu {
-                    let mut arrow_rect = item_rect.clone();
+                    let mut arrow_rect = item_rect;
                     let arrow_size = unsafe { GetSystemMetrics(SM_CXHSCROLL) };
                     arrow_rect.left = item_rect.right - arrow_size;
 
                     // center vertically
-                    let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _ as *mut RECT, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
-                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &mut arrow_rect, None)? };
+                    let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
+                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &arrow_rect, None)? };
                 }
 
                 draw_menu_text(dc, scheme, &text_rect, item, data, disabled)?;
@@ -972,7 +976,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Re
 }
 
 fn draw_separator(dc: HDC, scheme: &ColorScheme, rect: RECT) -> Result<(), Error> {
-    let mut separator_rect = rect.clone();
+    let mut separator_rect = rect;
 
     separator_rect.top += (rect.bottom - rect.top) / 2;
 
@@ -987,7 +991,7 @@ fn draw_separator(dc: HDC, scheme: &ColorScheme, rect: RECT) -> Result<(), Error
 }
 
 fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, data: &MenuData, disabled: bool) -> Result<(), Error> {
-    let mut text_rect = rect.clone();
+    let mut text_rect = *rect;
 
     unsafe { SetBkMode(dc, TRANSPARENT) };
     if disabled {
@@ -996,7 +1000,7 @@ fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, d
         unsafe { SetTextColor(dc, COLORREF(scheme.color)) };
     }
 
-    let menu_font = get_font(data.theme.clone(), &data.size, false)?;
+    let menu_font = get_font(data.theme, &data.size, false)?;
     let font = unsafe { CreateFontIndirectW(&menu_font) };
     let old_font = unsafe { SelectObject(dc, font) };
 
@@ -1017,9 +1021,10 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
     let mut rtl = false;
     let mut reverse = false;
 
-    let mut ppt = POINT::default();
-    ppt.x = x;
-    ppt.y = y;
+    let mut ppt = POINT {
+        x,
+        y,
+    };
 
     let mut hmon = unsafe { MonitorFromPoint(ppt, MONITOR_DEFAULTTONULL) };
 
@@ -1027,8 +1032,11 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
         hmon = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     }
 
-    let mut minf = MONITORINFO::default();
-    minf.cbSize = size_of::<MONITORINFO>() as u32;
+    let mut minf = MONITORINFO {
+        cbSize: size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+
     let _ = unsafe { GetMonitorInfoW(hmon, &mut minf) };
 
     if ppt.y < minf.rcWork.top {
@@ -1076,14 +1084,14 @@ fn change_selection(data: &mut MenuData, hwnd: HWND, screen_point: POINT) -> boo
 
         if selected_index >= 0 {
             let item = &data.items[selected_index as usize];
-            let mut rect = get_item_rect(data, item);
-            let _ = unsafe { InvalidateRect(hwnd, Some(&mut rect), false) };
+            let rect = get_item_rect(data, item);
+            let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
         }
 
         if data.selected_index >= 0 {
             let item = &data.items[data.selected_index as usize];
-            let mut rect = get_item_rect(data, item);
-            let _ = unsafe { InvalidateRect(hwnd, Some(&mut rect), false) };
+            let rect = get_item_rect(data, item);
+            let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
         }
     };
 
@@ -1202,16 +1210,14 @@ fn index_from_rect(data: &MenuData, rect: RECT) -> Option<i32> {
 
 fn index_from_point(hwnd: HWND, screen_pt: POINT, data: &MenuData) -> i32 {
     let mut selected_index: i32 = -1;
-    let mut pt = screen_pt.clone();
+    let mut pt = screen_pt;
     let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
 
     if pt.x >= 0 && pt.x < data.width && pt.y >= 0 && pt.y < data.height {
         for item in &data.items {
-            if pt.y >= item.top && pt.y <= item.bottom {
-                if item.menu_item_type != MenuItemType::Separator {
-                    selected_index = item.index as i32;
-                    break;
-                }
+            if pt.y >= item.top && pt.y <= item.bottom && item.menu_item_type != MenuItemType::Separator {
+                selected_index = item.index;
+                break;
             }
         }
     }
@@ -1289,12 +1295,10 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
         None => {
             if current_them == Theme::System {
                 current_them
+            } else if should_be_dark {
+                Theme::Dark
             } else {
-                if should_be_dark {
-                    Theme::Dark
-                } else {
-                    Theme::Light
-                }
+                Theme::Light
             }
         }
     };

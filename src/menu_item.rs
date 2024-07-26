@@ -47,6 +47,7 @@ pub struct MenuItem {
 }
 
 impl MenuItem {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(hwnd: HWND, id: &str, label: &str, value: &str, accelerator: &str, name: &str, state: MenuItemState, menu_item_type: MenuItemType, submenu: Option<Menu>) -> Self {
         Self {
             id: id.to_string(),

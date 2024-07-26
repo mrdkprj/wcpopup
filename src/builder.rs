@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(feature = "accelerator")]
 use crate::accelerator::create_haccel;
-use crate::{create_state, get_menu_data, Config, Corner, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
+use crate::{create_state, get_menu_data, is_win11, Config, Corner, Menu, MenuData, MenuItem, MenuItemType, MenuType, Theme};
 use windows::core::{w, Error};
 use windows::Win32::Foundation::COLORREF;
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE};
@@ -45,8 +45,10 @@ impl MenuBuilder {
         let mut menu = Menu::default();
         menu.parent = parent;
         menu.hwnd = menu.create_window(parent, theme);
-        let mut config = Config::default();
-        config.theme = theme;
+        let config = Config {
+            theme,
+            ..Default::default()
+        };
         Self {
             menu,
             items: Vec::new(),
@@ -75,7 +77,7 @@ impl MenuBuilder {
             theme: data.theme,
             size: data.size.clone(),
             color: data.color.clone(),
-            corner: data.corner.clone(),
+            corner: data.corner,
         };
 
         let mut menu = Menu::default();
@@ -123,6 +125,7 @@ impl MenuBuilder {
         self
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn radio_with_accelerator(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
         let item = MenuItem::new(self.menu.hwnd, id, label, value, accelerator, name, create_state(disabled, Some(checked)), MenuItemType::Radio, None);
         self.items.push(item);
@@ -193,7 +196,7 @@ impl MenuBuilder {
             theme: self.config.theme,
             size: self.config.size.clone(),
             color: self.config.color.clone(),
-            corner: self.config.corner.clone(),
+            corner: self.config.corner,
             thread_id: 0,
             parent: if is_main_menu {
                 HWND(0)
@@ -206,7 +209,7 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
-        if Self::is_win11() {
+        if is_win11() {
             if self.config.corner == Corner::Round {
                 unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32).unwrap() };
             }
@@ -219,15 +222,6 @@ impl MenuBuilder {
         Ok(self.menu)
     }
 
-    fn is_win11() -> bool {
-        let version = windows_version::OsVersion::current();
-        if version.major == 10 && version.build >= 22000 {
-            true
-        } else {
-            false
-        }
-    }
-
     #[cfg(feature = "accelerator")]
     fn collect_accelerators(items: &Vec<MenuItem>, accelerators: &mut HashMap<u16, String>) {
         for item in items {
@@ -235,10 +229,8 @@ impl MenuBuilder {
                 let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
                 let data = get_menu_data(submenu_hwnd);
                 Self::collect_accelerators(&data.items, accelerators);
-            } else {
-                if !item.accelerator.is_empty() {
-                    accelerators.insert(item.uuid, item.accelerator.clone());
-                }
+            } else if !item.accelerator.is_empty() {
+                accelerators.insert(item.uuid, item.accelerator.clone());
             }
         }
     }

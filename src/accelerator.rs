@@ -24,13 +24,13 @@ pub(crate) fn create_haccel(accelerators: &HashMap<u16, String>) -> Option<HACCE
 
     for (cmd, acc) in accelerators {
         let upper = acc.to_uppercase();
-        let upper_keys: Vec<&str> = upper.split("+").collect();
+        let upper_keys: Vec<&str> = upper.split('+').collect();
 
         if MODIFIERS.contains(&upper_keys[upper_keys.len() - 1]) {
             continue;
         }
 
-        let keys: Vec<&str> = acc.split("+").collect();
+        let keys: Vec<&str> = acc.split('+').collect();
         let key = keys[keys.len() - 1];
 
         let virtual_key = get_virtual_key(key);

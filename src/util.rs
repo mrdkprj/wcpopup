@@ -40,7 +40,7 @@ pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
 }
 
 #[allow(dead_code)]
-pub(crate) fn decode_wide(wide: &Vec<u16>) -> String {
+pub(crate) fn decode_wide(wide: &[u16]) -> String {
     let len = unsafe { lstrlenW(PCWSTR::from_raw(wide.as_ptr())) } as usize;
     let w_str_slice = unsafe { std::slice::from_raw_parts(wide.as_ptr(), len) };
     String::from_utf16_lossy(w_str_slice)
@@ -83,10 +83,8 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
     toggle_checked(&mut data.items[index], true);
 
     for i in 0..data.items.len() {
-        if data.items[i].menu_item_type == MenuItemType::Radio && data.items[i].name == data.items[index].name {
-            if i != index {
-                toggle_checked(&mut data.items[i], false);
-            }
+        if data.items[i].menu_item_type == MenuItemType::Radio && data.items[i].name == data.items[index].name && i != index {
+            toggle_checked(&mut data.items[i], false);
         }
     }
 }
@@ -98,7 +96,7 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
     match item_data.menu_item_type {
         MenuItemType::Separator => {
             // separator - use half system height and zero width
-            height = unsafe { (GetSystemMetrics(SM_CYMENU) as i32 + 4) / 2 };
+            height = unsafe { (GetSystemMetrics(SM_CYMENU) + 4) / 2 };
         }
 
         _ => {
@@ -151,8 +149,11 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
 }
 
 pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Result<LOGFONTW, Error> {
-    let mut info = NONCLIENTMETRICSW::default();
-    info.cbSize = size_of::<NONCLIENTMETRICSW>() as u32;
+    let mut info = NONCLIENTMETRICSW {
+        cbSize: size_of::<NONCLIENTMETRICSW>() as u32,
+        ..Default::default()
+    };
+
     unsafe { SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, size_of::<NONCLIENTMETRICSW>() as u32, Some(&mut info as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0))? };
 
     let mut menu_font = info.lfMenuFont;
@@ -181,6 +182,11 @@ pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Resu
     }
 
     Ok(menu_font)
+}
+
+pub(crate) fn is_win11() -> bool {
+    let version = windows_version::OsVersion::current();
+    version.major == 10 && version.build >= 22000
 }
 
 pub(crate) fn free_library() {
@@ -270,5 +276,5 @@ pub(crate) fn is_sys_dark_color() -> bool {
     let settings = UISettings::new().unwrap();
     let clr = settings.GetColorValue(UIColorType::Background).unwrap();
     let sum: u32 = (5 * clr.G as u32) + (2 * clr.R as u32) + (clr.B as u32);
-    !(sum > (8 * 128))
+    sum <= (8 * 128)
 }
