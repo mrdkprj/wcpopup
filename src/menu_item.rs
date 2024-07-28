@@ -56,6 +56,7 @@ impl std::fmt::Debug for MenuItem {
             .field("submenu", &self.submenu)
             .field("checked", &((self.state.0 & MENU_CHECKED.0) != 0))
             .field("disabled", &((self.state.0 & MENU_DISABLED.0) != 0))
+            .field("uuid", &self.uuid)
             .finish()
     }
 }
