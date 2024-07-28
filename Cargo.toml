@@ -13,6 +13,7 @@ exclude = [
 ]
 
 [features]
+default = []
 "accelerator" = []
 
 [package.metadata.docs.rs]

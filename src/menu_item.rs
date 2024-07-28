@@ -22,13 +22,13 @@ pub enum MenuItemType {
     Separator,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct MenuItemState(pub i32);
 pub const MENU_NORMAL: MenuItemState = MenuItemState(1);
 pub const MENU_CHECKED: MenuItemState = MenuItemState(2);
 pub const MENU_DISABLED: MenuItemState = MenuItemState(4);
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct MenuItem {
     pub id: String,
     pub label: String,
@@ -38,12 +38,30 @@ pub struct MenuItem {
     pub state: MenuItemState,
     pub menu_item_type: MenuItemType,
     pub submenu: Option<Menu>,
+    pub checked: bool,
+    pub disabled: bool,
     pub(crate) hwnd: HWND,
     #[cfg(feature = "accelerator")]
     pub(crate) uuid: u16,
     pub(crate) index: i32,
     pub(crate) top: i32,
     pub(crate) bottom: i32,
+}
+
+impl std::fmt::Debug for MenuItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MenuItem")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("value", &self.value)
+            .field("accelerator", &self.accelerator)
+            .field("name", &self.name)
+            .field("menu_item_type", &self.menu_item_type)
+            .field("submenu", &self.submenu)
+            .field("checked", &((self.state.0 & MENU_CHECKED.0) != 0))
+            .field("disabled", &((self.state.0 & MENU_DISABLED.0) != 0))
+            .finish()
+    }
 }
 
 impl MenuItem {
@@ -64,6 +82,8 @@ impl MenuItem {
             index: 0,
             top: 0,
             bottom: 0,
+            checked: (state.0 & MENU_CHECKED.0) != 0,
+            disabled: (state.0 & MENU_DISABLED.0) != 0,
         }
     }
 
@@ -91,13 +111,14 @@ impl MenuItem {
 
 impl MenuItem {
     pub fn new_text_item(id: &str, label: &str, value: &str, accelerator: Option<&str>, disabled: Option<bool>) -> Self {
+        let state = create_state(disabled, None);
         Self {
             id: id.to_string(),
             label: label.to_string(),
             value: value.to_string(),
             accelerator: accelerator.unwrap_or("").to_string(),
             name: String::new(),
-            state: create_state(disabled, None),
+            state,
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
             hwnd: HWND(0),
@@ -106,19 +127,22 @@ impl MenuItem {
             index: 0,
             top: 0,
             bottom: 0,
+            checked: (state.0 & MENU_CHECKED.0) != 0,
+            disabled: (state.0 & MENU_DISABLED.0) != 0,
         }
     }
 }
 
 impl MenuItem {
     pub fn new_check_item(id: &str, label: &str, value: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>) -> Self {
+        let state = create_state(disabled, Some(checked));
         Self {
             id: id.to_string(),
             label: label.to_string(),
             value: value.to_string(),
             accelerator: accelerator.unwrap_or("").to_string(),
             name: String::new(),
-            state: create_state(disabled, Some(checked)),
+            state,
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
             hwnd: HWND(0),
@@ -127,17 +151,20 @@ impl MenuItem {
             index: 0,
             top: 0,
             bottom: 0,
+            checked: (state.0 & MENU_CHECKED.0) != 0,
+            disabled: (state.0 & MENU_DISABLED.0) != 0,
         }
     }
 
     pub fn new_radio_item(id: &str, label: &str, value: &str, name: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>) -> Self {
+        let state = create_state(disabled, Some(checked));
         Self {
             id: id.to_string(),
             label: label.to_string(),
             value: value.to_string(),
             accelerator: accelerator.unwrap_or("").to_string(),
             name: name.to_string(),
-            state: create_state(disabled, Some(checked)),
+            state,
             menu_item_type: MenuItemType::Radio,
             submenu: None,
             hwnd: HWND(0),
@@ -146,6 +173,8 @@ impl MenuItem {
             index: 0,
             top: 0,
             bottom: 0,
+            checked: (state.0 & MENU_CHECKED.0) != 0,
+            disabled: (state.0 & MENU_DISABLED.0) != 0,
         }
     }
 
@@ -204,30 +233,8 @@ impl MenuItem {
             index: 0,
             top: 0,
             bottom: 0,
-        }
-    }
-}
-
-/// Selected MenuItem.
-#[derive(Debug, Clone, Serialize)]
-pub struct SelectedMenuItem {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    pub name: String,
-    pub checked: bool,
-    pub disabled: bool,
-}
-
-impl SelectedMenuItem {
-    pub(crate) fn from(item: &MenuItem) -> Self {
-        Self {
-            id: item.id.clone(),
-            label: item.label.clone(),
-            value: item.value.clone(),
-            name: item.name.clone(),
-            checked: (item.state.0 & MENU_CHECKED.0) != 0,
-            disabled: (item.state.0 & MENU_DISABLED.0) != 0,
+            checked: false,
+            disabled: false,
         }
     }
 }

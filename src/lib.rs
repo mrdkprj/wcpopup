@@ -57,18 +57,32 @@ use windows::{
     core::{w, Error, PCWSTR},
     Win32::{
         Foundation::{COLORREF, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-        Graphics::Gdi::{BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect, InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT},
+        Graphics::Gdi::{
+            BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect,
+            InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT,
+            DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+        },
         System::{
             LibraryLoader::GetModuleHandleW,
             Threading::{AttachThreadInput, GetCurrentThreadId},
         },
         UI::{
-            Controls::{CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_NORMAL, OTD_NONCLIENT},
-            Input::KeyboardAndMouse::{GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN},
+            Controls::{
+                CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKDISABLED, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_DISABLED, MSM_NORMAL, OTD_NONCLIENT,
+            },
+            Input::KeyboardAndMouse::{
+                GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
+                MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN,
+            },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetSystemMetrics, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_PARENT,
-                GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetSystemMetrics,
+                GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor,
+                SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND,
+                CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS,
+                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD,
+                WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP,
+                WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -78,7 +92,8 @@ const HOOK_PROP_NAME: &str = "WCPOPUP_KEYBOARD_HOOK";
 const LR_BUTTON_SIZE: i32 = 25;
 const ROUND_CORNER_MARGIN: i32 = 3;
 const SUBMENU_OFFSET: i32 = -5;
-const TIMER_ID: usize = 500;
+const SHOW_SUBMENU_TIMER_ID: usize = 500;
+const HIDE_SUBMENU_TIMER_ID: usize = 501;
 const FADE_EFFECT_TIME: u32 = 120;
 
 const WM_MENUSELECTED: u32 = WM_APP + 0x0001;
@@ -369,7 +384,7 @@ impl Menu {
     }
 
     /// Shows Menu asynchronously at the specified point and returns a selected MenuItem if any.
-    pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<SelectedMenuItem> {
+    pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<MenuItem> {
         // Prepare
         let info = Self::start_popup(self, x, y, false);
 
@@ -378,19 +393,19 @@ impl Menu {
         set_capture(self.hwnd);
 
         let mut msg = MSG::default();
-        let mut selected_item: Option<SelectedMenuItem> = None;
+        let mut selected_item: Option<MenuItem> = None;
 
         async {
             while unsafe { GetMessageW(&mut msg, None, 0, 0).as_bool() } {
                 match msg.message {
                     WM_MENUSELECTED => {
-                        selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                        selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
                         break;
                     }
 
                     #[cfg(feature = "accelerator")]
                     WM_MENUCOMMAND => {
-                        selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                        selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
                         break;
                     }
 
@@ -410,7 +425,7 @@ impl Menu {
     }
 
     /// Shows Menu at the specified point and returns a selected MenuItem if any.
-    pub fn popup_at(&self, x: i32, y: i32) -> Option<SelectedMenuItem> {
+    pub fn popup_at(&self, x: i32, y: i32) -> Option<MenuItem> {
         // Prepare
         let info = Self::start_popup(self, x, y, true);
 
@@ -419,18 +434,18 @@ impl Menu {
         set_capture(self.hwnd);
 
         let mut msg = MSG::default();
-        let mut selected_item: Option<SelectedMenuItem> = None;
+        let mut selected_item: Option<MenuItem> = None;
 
         while unsafe { GetMessageW(&mut msg, None, 0, 0).as_bool() } {
             match msg.message {
                 WM_MENUSELECTED => {
-                    selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                    selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
                     break;
                 }
 
                 #[cfg(feature = "accelerator")]
                 WM_MENUCOMMAND => {
-                    selected_item = Some(unsafe { transmute::<isize, &SelectedMenuItem>(msg.lParam.0).clone() });
+                    selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
                     break;
                 }
 
@@ -578,7 +593,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
             if let Some((data, index)) = maybe_index {
                 if on_menu_item_selected(data, index) {
-                    let menu_item = SelectedMenuItem::from(&data.items[index]);
+                    let menu_item = data.items[index].clone();
                     let id = init_menu_data(window);
                     post_message(window, id, WM_MENUCOMMAND, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
                 }
@@ -675,7 +690,7 @@ fn on_mouse_up(window: HWND) {
 
     if on_menu_item_selected(data, index as usize) {
         set_menu_data(hwnd, data);
-        let menu_item = SelectedMenuItem::from(&data.items[index as usize]);
+        let menu_item = data.items[index as usize].clone();
         let id = init_menu_data(window);
         post_message(hwnd, id, WM_MENUSELECTED, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
     }
@@ -721,15 +736,16 @@ fn get_parent_window(child: HWND) -> HWND {
         return owner;
     }
 
-    unsafe { GetAncestor(child, GA_PARENT) }
+    unsafe { GetParent(child) }
 }
 
 fn send_mouse_input(hwnd: HWND, msg: u32) {
     let mut count = 0;
-    let mut parent = get_parent_window(hwnd);
 
+    let mut parent = get_parent_window(hwnd);
     let mut cursor_point = POINT::default();
     let _ = unsafe { GetCursorPos(&mut cursor_point) };
+
     while parent.0 != 0 {
         let mut rect = RECT::default();
         let _ = unsafe { GetWindowRect(parent, &mut rect) };
@@ -945,7 +961,11 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Re
                     let _ = unsafe { OffsetRect(&mut rect, 0, ((item_rect.bottom - item_rect.top) - (rect.bottom - rect.top)) / 2) };
                     let mut check_rect = rect;
                     let _ = unsafe { InflateRect(&mut check_rect as *mut _, -1, -1) };
-                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &check_rect, None)? };
+                    if disabled {
+                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKDISABLED.0, &check_rect, None)? };
+                    } else {
+                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &check_rect, None)? };
+                    }
                 }
 
                 let mut text_rect = item_rect;
@@ -960,7 +980,11 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Re
 
                     // center vertically
                     let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
-                    unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &arrow_rect, None)? };
+                    if disabled {
+                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_DISABLED.0, &arrow_rect, None)? };
+                    } else {
+                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &arrow_rect, None)? };
+                    }
                 }
 
                 draw_menu_text(dc, scheme, &text_rect, item, data, disabled)?;
@@ -1000,14 +1024,26 @@ fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, d
         unsafe { SetTextColor(dc, COLORREF(scheme.color)) };
     }
 
-    let menu_font = get_font(data.theme, &data.size, false)?;
+    let mut menu_font = get_font(data.theme, &data.size, false)?;
     let font = unsafe { CreateFontIndirectW(&menu_font) };
     let old_font = unsafe { SelectObject(dc, font) };
 
     unsafe { DrawTextW(dc, &mut encode_wide(&item.label), &mut text_rect, DT_SINGLELINE | DT_LEFT | DT_VCENTER) };
 
     if !item.accelerator.is_empty() {
-        unsafe { SetTextColor(dc, COLORREF(scheme.disabled)) };
+        if disabled {
+            unsafe { SetTextColor(dc, COLORREF(scheme.disabled)) };
+        } else {
+            unsafe { SetTextColor(dc, COLORREF(scheme.accelerator)) };
+        }
+
+        // Draw accelerator text with font weight 400
+        if !menu_font.lfWeight != 400 {
+            menu_font.lfWeight = 400;
+            let font = unsafe { CreateFontIndirectW(&menu_font) };
+            unsafe { SelectObject(dc, font) };
+        }
+
         unsafe { DrawTextW(dc, &mut encode_wide(&item.accelerator), &mut text_rect, DT_SINGLELINE | DT_RIGHT | DT_VCENTER) };
     }
 
@@ -1125,7 +1161,7 @@ fn show_submenu(hwnd: HWND) {
     let proc: TIMERPROC = Some(delay_show_submenu);
     let mut show_delay: u32 = 0;
     let _ = unsafe { SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, Some(&mut show_delay as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) };
-    unsafe { SetTimer(hwnd, TIMER_ID, show_delay, proc) };
+    unsafe { SetTimer(hwnd, SHOW_SUBMENU_TIMER_ID, show_delay, proc) };
 }
 
 unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
@@ -1172,6 +1208,14 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
 }
 
 fn hide_submenu(hwnd: HWND) {
+    let proc: TIMERPROC = Some(delay_hide_submenu);
+    let mut hide_delay: u32 = 0;
+    let _ = unsafe { SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, Some(&mut hide_delay as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) };
+    unsafe { SetTimer(hwnd, HIDE_SUBMENU_TIMER_ID, hide_delay - 100, proc) };
+}
+
+unsafe extern "system" fn delay_hide_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
+    KillTimer(hwnd, id).unwrap();
     let data = get_menu_data_mut(hwnd);
     data.selected_index = -1;
     set_menu_data(hwnd, data);
@@ -1350,7 +1394,9 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     let window_styles = WS_POPUP | WS_CLIPSIBLINGS;
     let ex_style = WS_EX_TOOLWINDOW;
 
-    let hwnd = unsafe { CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None) };
+    let hwnd = unsafe {
+        CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
+    };
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
     let should_be_dark = if theme == Theme::System {

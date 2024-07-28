@@ -12,7 +12,10 @@ use windows::{
         Globalization::lstrlenW,
         Graphics::Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
-        UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS},
+        UI::WindowsAndMessaging::{
+            GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS,
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+        },
     },
     UI::ViewManagement::{UIColorType, UISettings},
 };
@@ -148,6 +151,20 @@ pub(crate) fn measure_item(hwnd: HWND, size: &MenuSize, item_data: &MenuItem, th
     Ok((width, height))
 }
 
+fn get_current_theme(theme: Theme) -> Theme {
+    let is_dark = if theme == Theme::System {
+        is_sys_dark_color()
+    } else {
+        theme == Theme::Dark
+    };
+
+    if is_dark {
+        Theme::Dark
+    } else {
+        Theme::Light
+    }
+}
+
 pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Result<LOGFONTW, Error> {
     let mut info = NONCLIENTMETRICSW {
         cbSize: size_of::<NONCLIENTMETRICSW>() as u32,
@@ -158,22 +175,20 @@ pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Resu
 
     let mut menu_font = info.lfMenuFont;
 
-    if size.font_size.is_some() {
-        menu_font.lfHeight = -size.font_size.unwrap();
+    let current_theme = get_current_theme(theme);
+
+    let (font_size, font_weight) = match current_theme {
+        Theme::Dark => (size.dark_font_size, size.dark_font_weight),
+        Theme::Light => (size.light_font_size, size.light_font_weight),
+        Theme::System => (None, None),
+    };
+
+    if font_size.is_some() {
+        menu_font.lfHeight = -font_size.unwrap();
     }
 
-    if size.font_weight.is_some() {
-        menu_font.lfWeight = size.font_weight.unwrap();
-    } else {
-        let is_dark = if theme == Theme::System {
-            should_apps_use_dark_mode()
-        } else {
-            theme == Theme::Dark
-        };
-        if is_dark {
-            // bold font
-            menu_font.lfWeight = 700;
-        }
+    if font_weight.is_some() {
+        menu_font.lfWeight = font_weight.unwrap();
     }
 
     // When font is used for measurement, always use bold font

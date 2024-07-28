@@ -57,10 +57,14 @@ pub struct MenuSize {
     pub item_vertical_padding: i32,
     /// Left and right padding of a MenuItem.
     pub item_horizontal_padding: i32,
-    /// Font size
-    pub font_size: Option<i32>,
-    /// Font weight
-    pub font_weight: Option<i32>,
+    /// Font size for Dark theme.
+    pub dark_font_size: Option<i32>,
+    /// Font size for Light theme.
+    pub light_font_size: Option<i32>,
+    /// Font weight for Dark theme. Default is 700(bold).
+    pub dark_font_weight: Option<i32>,
+    /// Font weight for Light theme.
+    pub light_font_weight: Option<i32>,
 }
 
 impl Default for MenuSize {
@@ -71,8 +75,10 @@ impl Default for MenuSize {
             horizontal_margin: 0,
             item_vertical_padding: 12,
             item_horizontal_padding: 10,
-            font_size: None,
-            font_weight: None,
+            dark_font_size: None,
+            light_font_size: None,
+            dark_font_weight: Some(700),
+            light_font_weight: None,
         }
     }
 }
@@ -87,32 +93,34 @@ pub struct ThemeColor {
 impl Default for ThemeColor {
     fn default() -> Self {
         Self {
-            dark: DARK_COLOR_SCHEME,
-            light: LIGHT_COLOR_SCHEME,
+            dark: DEFAULT_DARK_COLOR_SCHEME,
+            light: DEFAULT_LIGHT_COLOR_SCHEME,
         }
     }
 }
 
-/// Menu color settings for text, border and background.
+/// Menu color settings for text, accelerator, border and background.
 ///
 /// ## Default colors for Dark Theme
 ///
 /// ```no_run
-/// const DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
+/// const DEFAULT_DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
 ///   color: 0x0e7e0e0,
+///   accelerator: 0x0c5c1c1,
 ///   border: 0x0454545,
 ///   disabled: 0x00565659,
 ///   background_color: 0x0252526,
-///   hover_background_color: 0x0454545,
+///   hover_background_color: 0x03b3a3a,
 /// };
 /// ```
 ///
 /// ## Default colors for Light Theme
 /// ```no_run
-/// const LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
+/// const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
 ///   color: 0x00e0e0e,
+///   accelerator: 0x0635e5e,
 ///   border: 0x0e9e2e2,
-///   disabled: 0x00565659,
+///   disabled: 0x0c5c1c1,
 ///   background_color: 0x00f5f5f5,
 ///   hover_background_color: 0x0e9e2e2,
 /// };
@@ -121,6 +129,8 @@ impl Default for ThemeColor {
 pub struct ColorScheme {
     /// MenuItem text color.
     pub color: u32,
+    /// MenuItem accelerator text color.
+    pub accelerator: u32,
     /// Menu border and separator color.
     pub border: u32,
     /// Disabled MenuItem color.
@@ -131,18 +141,20 @@ pub struct ColorScheme {
     pub hover_background_color: u32,
 }
 
-const DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
+pub const DEFAULT_DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
     color: 0x0e7e0e0,
+    accelerator: 0x0c5c1c1,
     border: 0x0454545,
     disabled: 0x00565659,
     background_color: 0x0252526,
-    hover_background_color: 0x0454545,
+    hover_background_color: 0x03b3a3a,
 };
 
-const LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
+pub const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
     color: 0x00e0e0e,
+    accelerator: 0x0635e5e,
     border: 0x0e9e2e2,
-    disabled: 0x00565659,
+    disabled: 0x0c5c1c1,
     background_color: 0x00f5f5f5,
     hover_background_color: 0x0e9e2e2,
 };
