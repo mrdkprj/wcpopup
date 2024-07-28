@@ -185,18 +185,39 @@ impl Menu {
     }
 
     pub fn theme(&self) -> Theme {
-        let data = get_menu_data(self.hwnd);
+        let hwnd = if self.menu_type == MenuType::Main {
+            self.hwnd
+        } else {
+            self.parent
+        };
+        let data = get_menu_data(hwnd);
         data.theme
     }
 
     /// Sets the theme for Menu.
     pub fn set_theme(&self, theme: Theme) {
-        on_theme_change(self.hwnd, Some(theme), ThemeChangeFactor::User);
+        let hwnd = if self.menu_type == MenuType::Main {
+            self.hwnd
+        } else {
+            self.parent
+        };
+        on_theme_change(hwnd, Some(theme), ThemeChangeFactor::User);
     }
 
     /// Gets all MenuItems of Menu.
     pub fn items(&self) -> Vec<MenuItem> {
         get_menu_data(self.hwnd).items.clone()
+    }
+
+    /// Gets the MenuItem with the specified id.
+    pub fn get_menu_item_by_id(&self, id: &str) -> Option<MenuItem> {
+        let hwnd = if self.menu_type == MenuType::Main {
+            self.hwnd
+        } else {
+            self.parent
+        };
+        let data = get_menu_data(hwnd);
+        find_by_id(data, id)
     }
 
     /// Adds a MenuItem to the end of MenuItems.
@@ -222,13 +243,26 @@ impl Menu {
     }
 
     /// Removes the MenuItem at the specified index.
-    pub fn remove(&mut self, index: u32) {
+    pub fn remove_at(&mut self, index: u32) {
         let data = get_menu_data_mut(self.hwnd);
         #[allow(unused_variables)]
         let removed_item = data.items.remove(index as usize);
         Self::recalculate(self, data);
         #[cfg(feature = "accelerator")]
         Self::reset_haccel(self, &removed_item, true);
+    }
+
+    /// Removes the MenuItem.
+    pub fn remove(&mut self, item: &MenuItem) {
+        let data = get_menu_data_mut(self.hwnd);
+        let maybe_index = index_of_item(data, item.uuid);
+        if let Some((data, index)) = maybe_index {
+            #[allow(unused_variables)]
+            let removed_item = data.items.remove(index);
+            Self::recalculate(self, data);
+            #[cfg(feature = "accelerator")]
+            Self::reset_haccel(self, &removed_item, true);
+        }
     }
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
@@ -828,17 +862,36 @@ fn init_menu_data(hwnd: HWND) -> u32 {
     thread_id
 }
 
-#[cfg(feature = "accelerator")]
-fn index_of_item(data: &mut MenuData, id: u16) -> Option<(&mut MenuData, usize)> {
+fn find_by_id(data: &MenuData, id: &str) -> Option<MenuItem> {
+    let item_id = id.to_string();
+    for item in &data.items {
+        if item.id == item_id {
+            return Some(item.clone());
+        }
+
+        if item.menu_item_type == MenuItemType::Submenu {
+            let hwnd = item.submenu.as_ref().unwrap().hwnd;
+            let submenu_data = get_menu_data(hwnd);
+            if let Some(menu_item) = find_by_id(submenu_data, id) {
+                return Some(menu_item);
+            }
+        }
+    }
+    None
+}
+
+fn index_of_item(data: &mut MenuData, uuid: u16) -> Option<(&mut MenuData, usize)> {
     for (index, item) in data.items.iter().enumerate() {
+        if item.uuid == uuid {
+            return Some((data, index));
+        }
+
         if item.menu_item_type == MenuItemType::Submenu {
             let hwnd = item.submenu.as_ref().unwrap().hwnd;
             let submenu_data = get_menu_data_mut(hwnd);
-            if let Some(index) = index_of_item(submenu_data, id) {
+            if let Some(index) = index_of_item(submenu_data, uuid) {
                 return Some(index);
             }
-        } else if item.uuid == id {
-            return Some((data, index));
         }
     }
     None
@@ -1145,7 +1198,7 @@ fn toggle_submenu(data: &mut MenuData, selected_index: i32) -> bool {
 
     if data.visible_submenu_index >= 0 && data.visible_submenu_index != selected_index {
         let hwnd = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().hwnd;
-        hide_submenu(hwnd);
+        animate_hide_submenu(hwnd);
         data.visible_submenu_index = -1;
     }
 
@@ -1208,6 +1261,13 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
 }
 
 fn hide_submenu(hwnd: HWND) {
+    let data = get_menu_data_mut(hwnd);
+    data.selected_index = -1;
+    set_menu_data(hwnd, data);
+    let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
+}
+
+fn animate_hide_submenu(hwnd: HWND) {
     let proc: TIMERPROC = Some(delay_hide_submenu);
     let mut hide_delay: u32 = 0;
     let _ = unsafe { SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, Some(&mut hide_delay as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) };

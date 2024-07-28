@@ -1,6 +1,3 @@
-#[cfg(feature = "accelerator")]
-use std::sync::atomic::{AtomicU16, Ordering};
-
 use crate::{
     builder::MenuBuilder,
     create_state,
@@ -8,9 +5,9 @@ use crate::{
     Menu,
 };
 use serde::Serialize;
+use std::sync::atomic::{AtomicU16, Ordering};
 use windows::Win32::Foundation::HWND;
 
-#[cfg(feature = "accelerator")]
 static UUID: AtomicU16 = AtomicU16::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,9 +37,8 @@ pub struct MenuItem {
     pub submenu: Option<Menu>,
     pub checked: bool,
     pub disabled: bool,
+    pub uuid: u16,
     pub(crate) hwnd: HWND,
-    #[cfg(feature = "accelerator")]
-    pub(crate) uuid: u16,
     pub(crate) index: i32,
     pub(crate) top: i32,
     pub(crate) bottom: i32,
@@ -77,7 +73,6 @@ impl MenuItem {
             menu_item_type,
             submenu,
             hwnd,
-            #[cfg(feature = "accelerator")]
             uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
@@ -119,10 +114,9 @@ impl MenuItem {
             accelerator: accelerator.unwrap_or("").to_string(),
             name: String::new(),
             state,
-            menu_item_type: MenuItemType::Checkbox,
+            menu_item_type: MenuItemType::Text,
             submenu: None,
             hwnd: HWND(0),
-            #[cfg(feature = "accelerator")]
             uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
@@ -146,7 +140,6 @@ impl MenuItem {
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
             hwnd: HWND(0),
-            #[cfg(feature = "accelerator")]
             uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
@@ -168,7 +161,6 @@ impl MenuItem {
             menu_item_type: MenuItemType::Radio,
             submenu: None,
             hwnd: HWND(0),
-            #[cfg(feature = "accelerator")]
             uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,
@@ -203,8 +195,8 @@ pub struct SubmenuItemBuilder {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(menu: &Menu, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
-        let mut item = MenuItem::new(menu.hwnd, label, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
+    pub fn new_submenu_item(menu: &Menu, id: &str, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
+        let mut item = MenuItem::new(menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
         // Create builder
         let builder = MenuBuilder::new_from_menu(menu);
         item.submenu = Some(builder.menu.clone());
@@ -228,7 +220,6 @@ impl MenuItem {
             menu_item_type: MenuItemType::Separator,
             submenu: None,
             hwnd: HWND(0),
-            #[cfg(feature = "accelerator")]
             uuid: UUID.fetch_add(1, Ordering::Relaxed),
             index: 0,
             top: 0,

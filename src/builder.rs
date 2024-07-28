@@ -139,12 +139,12 @@ impl MenuBuilder {
     }
 
     /// Adds a submenu MenuItem to Menu.
-    pub fn submenu(&mut self, label: &str, disabled: Option<bool>) -> Self {
-        let mut item = MenuItem::new(self.menu.hwnd, label, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
-        /* Create builder */
+    pub fn submenu(&mut self, id: &str, label: &str, disabled: Option<bool>) -> Self {
+        let mut item = MenuItem::new(self.menu.hwnd, id, label, "", "", "", create_state(disabled, None), MenuItemType::Submenu, None);
         let mut builder = Self::new_from_config(self.menu.hwnd, self.config.clone());
         builder.menu_type = MenuType::Submenu;
 
+        // Set dummy menu to be replaced later
         item.submenu = Some(builder.menu.clone());
         self.items.push(item);
 
@@ -170,6 +170,10 @@ impl MenuBuilder {
                     None => haccel = None,
                 }
             }
+        }
+
+        if is_main_menu {
+            Self::rebuild_submenu(&mut self);
         }
 
         let data = MenuData {
@@ -220,6 +224,17 @@ impl MenuBuilder {
         unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
         Ok(self.menu)
+    }
+
+    fn rebuild_submenu(&mut self) {
+        for item in self.items.iter_mut() {
+            if item.menu_item_type == MenuItemType::Submenu {
+                let mut submenu = item.submenu.as_ref().unwrap().clone();
+                submenu.menu_type = MenuType::Submenu;
+                let _ = submenu.calculate(&mut submenu.items(), &self.config.size, self.config.theme, self.config.corner);
+                item.submenu = Some(submenu);
+            }
+        }
     }
 
     #[cfg(feature = "accelerator")]
