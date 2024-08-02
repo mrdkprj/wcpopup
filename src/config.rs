@@ -42,8 +42,11 @@ impl Default for Config {
 ///   horizontal_margin: 0,
 ///   item_vertical_padding: 12,
 ///   item_horizontal_padding: 10,
-///   font_size: None,
-///   font_weight: None,
+///   submenu_offset: -3
+///   dark_font_size: None,
+///   light_font_size: None,
+///   dark_font_weight: Some(700),
+///   light_font_weight: None,
 ///  ```
 #[derive(Debug, Clone)]
 pub struct MenuSize {
@@ -57,6 +60,8 @@ pub struct MenuSize {
     pub item_vertical_padding: i32,
     /// Left and right padding of a MenuItem.
     pub item_horizontal_padding: i32,
+    /// Submenu position relative to the menu.
+    pub submenu_offset: i32,
     /// Font size for Dark theme.
     pub dark_font_size: Option<i32>,
     /// Font size for Light theme.
@@ -75,6 +80,7 @@ impl Default for MenuSize {
             horizontal_margin: 0,
             item_vertical_padding: 12,
             item_horizontal_padding: 10,
+            submenu_offset: -3,
             dark_font_size: None,
             light_font_size: None,
             dark_font_weight: Some(700),
@@ -101,28 +107,30 @@ impl Default for ThemeColor {
 
 /// Menu color settings for text, accelerator, border and background.
 ///
-/// ## Default colors for Dark Theme
+/// ## Default colors for Dark Theme.
 ///
 /// ```no_run
 /// const DEFAULT_DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
-///   color: 0x0e7e0e0,
-///   accelerator: 0x0c5c1c1,
-///   border: 0x0454545,
+///   color: 0x00e7e0e0,
+///   accelerator: 0x00c5c1c1,
+///   border: 0x00454545,
+///   separator: 0x00454545,
 ///   disabled: 0x00565659,
-///   background_color: 0x0252526,
-///   hover_background_color: 0x03b3a3a,
+///   background_color: 0x00252526,
+///   hover_background_color: 0x003b3a3a,
 /// };
 /// ```
 ///
-/// ## Default colors for Light Theme
+/// ## Default colors for Light Theme.
 /// ```no_run
 /// const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
 ///   color: 0x00e0e0e,
-///   accelerator: 0x0635e5e,
-///   border: 0x0e9e2e2,
-///   disabled: 0x0c5c1c1,
+///   accelerator: 0x00635e5e,
+///   border: 0x00e9e2e2,
+///   separator: 0x00e9e2e2,
+///   disabled: 0x00c5c1c1,
 ///   background_color: 0x00f5f5f5,
-///   hover_background_color: 0x0e9e2e2,
+///   hover_background_color: 0x00e9e2e2,
 /// };
 /// ```
 #[derive(Debug, Clone)]
@@ -131,8 +139,10 @@ pub struct ColorScheme {
     pub color: u32,
     /// MenuItem accelerator text color.
     pub accelerator: u32,
-    /// Menu border and separator color.
+    /// Menu border color.
     pub border: u32,
+    /// Menu separator color.
+    pub separator: u32,
     /// Disabled MenuItem color.
     pub disabled: u32,
     /// Menu background color.
@@ -142,21 +152,23 @@ pub struct ColorScheme {
 }
 
 pub const DEFAULT_DARK_COLOR_SCHEME: ColorScheme = ColorScheme {
-    color: 0x0e7e0e0,
-    accelerator: 0x0c5c1c1,
-    border: 0x0454545,
-    disabled: 0x00565659,
-    background_color: 0x0252526,
-    hover_background_color: 0x03b3a3a,
+    color: 0x00e7e0e0,
+    accelerator: 0x00c5c1c1,
+    border: 0x00454545,
+    separator: 0x00454545,
+    disabled: 0x000565659,
+    background_color: 0x00252526,
+    hover_background_color: 0x003b3a3a,
 };
 
 pub const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
-    color: 0x00e0e0e,
-    accelerator: 0x0635e5e,
-    border: 0x0e9e2e2,
-    disabled: 0x0c5c1c1,
+    color: 0x000e0e0e,
+    accelerator: 0x00635e5e,
+    border: 0x00e9e2e2,
+    separator: 0x00e9e2e2,
+    disabled: 0x00c5c1c1,
     background_color: 0x00f5f5f5,
-    hover_background_color: 0x0e9e2e2,
+    hover_background_color: 0x00e9e2e2,
 };
 
 /// Creates RGB color.

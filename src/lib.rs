@@ -59,8 +59,8 @@ use windows::{
         Foundation::{COLORREF, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect,
-            InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow, DT_LEFT,
-            DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, RoundRect, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow,
+            DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::{
             LibraryLoader::GetModuleHandleW,
@@ -81,8 +81,8 @@ use windows::{
                 SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND,
                 CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS,
                 SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD,
-                WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP,
-                WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_TOOLWINDOW, WS_POPUP,
+                WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN,
+                WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -90,8 +90,8 @@ use windows::{
 
 const HOOK_PROP_NAME: &str = "WCPOPUP_KEYBOARD_HOOK";
 const LR_BUTTON_SIZE: i32 = 25;
-const ROUND_CORNER_MARGIN: i32 = 3;
-const SUBMENU_OFFSET: i32 = -5;
+// iPaddedBorderWidth = 4px
+const ROUND_CORNER_MARGIN: i32 = 4;
 const SHOW_SUBMENU_TIMER_ID: usize = 500;
 const HIDE_SUBMENU_TIMER_ID: usize = 501;
 const FADE_EFFECT_TIME: u32 = 120;
@@ -325,7 +325,7 @@ impl Menu {
     }
 
     fn calculate(&mut self, items: &mut [MenuItem], size: &MenuSize, theme: Theme, corner: Corner) -> Result<Size, Error> {
-        // Add top and left margin
+        // Add top margin
         let mut width = 0;
         let mut height = size.vertical_margin;
 
@@ -344,7 +344,7 @@ impl Menu {
             height += item_height;
         }
 
-        // Add bottom and right margin
+        // Add bottom and left/right margin
         width += size.horizontal_margin * 2;
         height += size.vertical_margin;
 
@@ -581,6 +581,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let h_theme = get_h_theme(window, data);
             paint(hdc, data, &data.items, h_theme).unwrap();
             LRESULT(1)
+        }
+
+        WM_ERASEBKGND => {
+            let data = get_menu_data(window);
+            paint_background(window, data, None);
+            LRESULT(0)
         }
 
         WM_PAINT => {
@@ -897,20 +903,6 @@ fn index_of_item(data: &mut MenuData, uuid: u16) -> Option<(&mut MenuData, usize
     None
 }
 
-fn get_color_scheme(data: &MenuData) -> &ColorScheme {
-    let is_dark = if data.theme == Theme::System {
-        is_sys_dark_color()
-    } else {
-        data.theme == Theme::Dark
-    };
-
-    if is_dark {
-        &data.color.dark
-    } else {
-        &data.color.light
-    }
-}
-
 fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
     unsafe {
         let dc = if let Some(hdc) = hdc {
@@ -940,7 +932,19 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         };
 
         let hbr = CreateSolidBrush(COLORREF(scheme.background_color));
-        FillRect(dc, &menu_rect, hbr);
+
+        if data.corner == Corner::Round {
+            let pen = CreatePen(PS_SOLID, 0, COLORREF(scheme.background_color));
+            let old_pen = SelectObject(dc, pen);
+            let old_brush = SelectObject(dc, hbr);
+            let round_dize = ROUND_CORNER_MARGIN * 2;
+            let _ = RoundRect(dc, menu_rect.left, menu_rect.top, menu_rect.right, menu_rect.bottom, round_dize, round_dize);
+            SelectObject(dc, old_pen);
+            SelectObject(dc, old_brush);
+            let _ = DeleteObject(old_pen);
+        } else {
+            FillRect(dc, &menu_rect, hbr);
+        }
         let _ = DeleteObject(hbr);
 
         if hdc.is_none() {
@@ -1057,7 +1061,7 @@ fn draw_separator(dc: HDC, scheme: &ColorScheme, rect: RECT) -> Result<(), Error
 
     separator_rect.top += (rect.bottom - rect.top) / 2;
 
-    let pen = unsafe { CreatePen(PS_SOLID, 1, COLORREF(scheme.border)) };
+    let pen = unsafe { CreatePen(PS_SOLID, 1, COLORREF(scheme.separator)) };
     let old_pen = unsafe { SelectObject(dc, pen) };
     let _ = unsafe { MoveToEx(dc, separator_rect.left, separator_rect.top, None) };
     let _ = unsafe { LineTo(dc, separator_rect.right, separator_rect.top) };
@@ -1223,18 +1227,24 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
     let main_menu_data = get_menu_data(hwnd);
 
     if main_menu_data.visible_submenu_index >= 0 {
-        let mut main_menu_rect = RECT::default();
-        GetWindowRect(hwnd, &mut main_menu_rect).unwrap();
         let item = &main_menu_data.items[main_menu_data.visible_submenu_index as usize];
         let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
         let submenu_data = get_menu_data(submenu_hwnd);
 
+        // If submenu has no item, do not show submenu
+        if submenu_data.items.is_empty() {
+            return;
+        }
+
+        let mut main_menu_rect = RECT::default();
+        GetWindowRect(hwnd, &mut main_menu_rect).unwrap();
+
         let pt = get_display_point(submenu_hwnd, main_menu_rect.right, main_menu_rect.top + item.top, submenu_data.width, submenu_data.height);
 
         let x = if pt.rtl {
-            main_menu_rect.left - submenu_data.width - SUBMENU_OFFSET
+            main_menu_rect.left - submenu_data.width - main_menu_data.size.submenu_offset
         } else {
-            main_menu_rect.right + SUBMENU_OFFSET
+            main_menu_rect.right + main_menu_data.size.submenu_offset
         };
 
         let round_corner_margin = if main_menu_data.corner == Corner::Round {
@@ -1414,8 +1424,10 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
     unsafe { CloseThemeData(old_htheme).unwrap() };
     let h_theme = unsafe { OpenThemeDataEx(hwnd, w!("Menu"), OTD_NONCLIENT) };
     data.h_theme = Some(Rc::new(h_theme));
-
     data.theme = new_theme;
+
+    set_window_border_color(hwnd, data).unwrap();
+
     set_menu_data(hwnd, data);
     let _ = unsafe { UpdateWindow(hwnd) };
 
@@ -1423,9 +1435,10 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
         let item = menu_item;
         if item.menu_item_type == MenuItemType::Submenu {
             let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
-            let data = get_menu_data_mut(submenu_hwnd);
-            data.theme = new_theme;
-            set_menu_data(submenu_hwnd, data);
+            let submenu_data = get_menu_data_mut(submenu_hwnd);
+            submenu_data.theme = new_theme;
+            set_window_border_color(submenu_hwnd, data).unwrap();
+            set_menu_data(submenu_hwnd, submenu_data);
             let _ = unsafe { UpdateWindow(submenu_hwnd) };
         }
     }
@@ -1452,11 +1465,12 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     unsafe { RegisterClassExW(&class) };
 
     let window_styles = WS_POPUP | WS_CLIPSIBLINGS;
-    let ex_style = WS_EX_TOOLWINDOW;
+    let ex_style = WS_EX_TOOLWINDOW | WS_EX_LAYERED;
 
     let hwnd = unsafe {
         CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
     };
+
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
     let should_be_dark = if theme == Theme::System {

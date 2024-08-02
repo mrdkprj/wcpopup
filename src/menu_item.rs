@@ -20,45 +20,28 @@ pub enum MenuItemType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct MenuItemState(pub i32);
-pub const MENU_NORMAL: MenuItemState = MenuItemState(1);
-pub const MENU_CHECKED: MenuItemState = MenuItemState(2);
-pub const MENU_DISABLED: MenuItemState = MenuItemState(4);
+pub(crate) struct MenuItemState(pub i32);
+pub(crate) const MENU_NORMAL: MenuItemState = MenuItemState(1);
+pub(crate) const MENU_CHECKED: MenuItemState = MenuItemState(2);
+pub(crate) const MENU_DISABLED: MenuItemState = MenuItemState(4);
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MenuItem {
     pub id: String,
     pub label: String,
     pub value: String,
     pub accelerator: String,
     pub name: String,
-    pub state: MenuItemState,
     pub menu_item_type: MenuItemType,
     pub submenu: Option<Menu>,
     pub checked: bool,
     pub disabled: bool,
     pub uuid: u16,
+    pub(crate) state: MenuItemState,
     pub(crate) hwnd: HWND,
     pub(crate) index: i32,
     pub(crate) top: i32,
     pub(crate) bottom: i32,
-}
-
-impl std::fmt::Debug for MenuItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MenuItem")
-            .field("id", &self.id)
-            .field("label", &self.label)
-            .field("value", &self.value)
-            .field("accelerator", &self.accelerator)
-            .field("name", &self.name)
-            .field("menu_item_type", &self.menu_item_type)
-            .field("submenu", &self.submenu)
-            .field("checked", &((self.state.0 & MENU_CHECKED.0) != 0))
-            .field("disabled", &((self.state.0 & MENU_DISABLED.0) != 0))
-            .field("uuid", &self.uuid)
-            .finish()
-    }
 }
 
 impl MenuItem {

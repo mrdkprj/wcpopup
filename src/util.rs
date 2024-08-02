@@ -1,4 +1,4 @@
-use crate::{MenuData, MenuItem, MenuItemState, MenuItemType, MenuSize, Theme, LR_BUTTON_SIZE, MENU_CHECKED, MENU_DISABLED, MENU_NORMAL};
+use crate::{ColorScheme, MenuData, MenuItem, MenuItemState, MenuItemType, MenuSize, Theme, LR_BUTTON_SIZE, MENU_CHECKED, MENU_DISABLED, MENU_NORMAL};
 use once_cell::sync::Lazy;
 use std::{
     ffi::c_void,
@@ -8,9 +8,12 @@ use std::{
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
     Win32::{
-        Foundation::{FreeLibrary, HMODULE, HWND, RECT},
+        Foundation::{FreeLibrary, COLORREF, HMODULE, HWND, RECT},
         Globalization::lstrlenW,
-        Graphics::Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
+        Graphics::{
+            Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE},
+            Gdi::{CreateFontIndirectW, DeleteObject, DrawTextW, GetDC, GetObjectW, ReleaseDC, SelectObject, DT_CALCRECT, DT_LEFT, DT_SINGLELINE, DT_VCENTER, LOGFONTW},
+        },
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
         UI::WindowsAndMessaging::{
             GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, SystemParametersInfoW, GWL_USERDATA, NONCLIENTMETRICSW, SM_CXMENUCHECK, SM_CYMENU, SPI_GETNONCLIENTMETRICS,
@@ -165,7 +168,21 @@ fn get_current_theme(theme: Theme) -> Theme {
     }
 }
 
-pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Result<LOGFONTW, Error> {
+pub(crate) fn get_color_scheme(data: &MenuData) -> &ColorScheme {
+    let is_dark = if data.theme == Theme::System {
+        is_sys_dark_color()
+    } else {
+        data.theme == Theme::Dark
+    };
+
+    if is_dark {
+        &data.color.dark
+    } else {
+        &data.color.light
+    }
+}
+
+pub(crate) fn get_non_client_metrics() -> Result<NONCLIENTMETRICSW, Error> {
     let mut info = NONCLIENTMETRICSW {
         cbSize: size_of::<NONCLIENTMETRICSW>() as u32,
         ..Default::default()
@@ -173,6 +190,11 @@ pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Resu
 
     unsafe { SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, size_of::<NONCLIENTMETRICSW>() as u32, Some(&mut info as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0))? };
 
+    Ok(info)
+}
+
+pub(crate) fn get_font(theme: Theme, size: &MenuSize, for_measure: bool) -> Result<LOGFONTW, Error> {
+    let info = get_non_client_metrics()?;
     let mut menu_font = info.lfMenuFont;
 
     let current_theme = get_current_theme(theme);
@@ -206,6 +228,18 @@ pub(crate) fn is_win11() -> bool {
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(*HUXTHEME) };
+}
+
+pub(crate) fn set_window_border_color(hwnd: HWND, data: &MenuData) -> Result<(), Error> {
+    if is_win11() {
+        if data.size.border_size > 0 {
+            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
+        } else {
+            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
+        }
+    }
+
+    Ok(())
 }
 
 pub(crate) fn allow_dark_mode_for_window(hwnd: HWND, is_dark: bool) {
