@@ -43,7 +43,7 @@ impl Default for Config {
 ///   vertical_padding: 0,
 ///   horizontal_padding: 0,
 ///   item_vertical_padding: 8,
-///   item_horizontal_padding: 10,
+///   item_horizontal_padding: 0,
 ///   submenu_offset: -3
 ///  ```
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ impl Default for MenuSize {
             vertical_padding: 0,
             horizontal_padding: 0,
             item_vertical_padding: 8,
-            item_horizontal_padding: 15,
+            item_horizontal_padding: 0,
             submenu_offset: -3,
         }
     }
@@ -166,7 +166,7 @@ pub const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
 ///   font_family: "Segoe UI",
 ///   dark_font_size: 12.0,
 ///   light_font_size: 12.0,
-///   dark_font_weight: Medium,
+///   dark_font_weight: Normal,
 ///   light_font_weight: Normal,
 ///  ```
 pub struct MenuFont {
@@ -188,7 +188,7 @@ impl Default for MenuFont {
             font_family: String::from("Segoe UI"),
             dark_font_size: 12.0,
             light_font_size: 12.0,
-            dark_font_weight: FontWeight::Medium,
+            dark_font_weight: FontWeight::Normal,
             light_font_weight: FontWeight::Normal,
         }
     }
