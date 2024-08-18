@@ -1,7 +1,7 @@
-//! Context(popup) menu for Windows.
+//! Context menu for Windows.
 //!
-//! You can customize text, border, background colors using [`ColorScheme`] and border size, margins, paddings using [`MenuSize`].
-//! Windows Theme(Dark/Light) is also sopported.
+//! You can customize text, border, background colors using [`ColorScheme`] and border size, paddings using [`MenuSize`].
+//! Theme(Dark/Light/System) is also sopported.
 //!
 //! ## Example
 //!
@@ -31,67 +31,67 @@
 //!   let selected_item = menu.popup_at(100, 100);
 //! }
 //! ```
-
 mod accelerator;
 mod builder;
 mod config;
+mod direct2d;
 mod menu_item;
 mod util;
 #[cfg(feature = "accelerator")]
 use accelerator::{create_haccel, destroy_haccel};
 pub use builder::*;
 pub use config::*;
+use direct2d::{colorref_to_d2d1_color_f, create_write_factory, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
 pub use menu_item::*;
 use util::*;
 
 #[cfg(feature = "accelerator")]
-use std::collections::HashMap;
+use std::rc::Rc;
 use std::{
     ffi::c_void,
     mem::{size_of, transmute},
-    rc::Rc,
 };
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{TranslateAcceleratorW, HACCEL, WM_COMMAND, WM_SYSCOMMAND};
 use windows::{
     core::{w, Error, PCWSTR},
+    Foundation::Numerics::Matrix3x2,
     Win32::{
-        Foundation::{COLORREF, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-        Graphics::Gdi::{
-            BeginPaint, ClientToScreen, CreateFontIndirectW, CreatePen, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, ExcludeClipRect, FillRect, GetMonitorInfoW, GetWindowDC, InflateRect,
-            InvalidateRect, LineTo, MonitorFromPoint, MonitorFromWindow, MoveToEx, OffsetRect, PtInRect, ReleaseDC, RoundRect, ScreenToClient, SelectObject, SetBkMode, SetTextColor, UpdateWindow,
-            DT_LEFT, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+        Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Graphics::{
+            Direct2D::{Common::D2D_POINT_2F, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT},
+            DirectWrite::{DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_ALIGNMENT_TRAILING},
+            Gdi::{
+                BeginPaint, ClientToScreen, EndPaint, GetMonitorInfoW, GetWindowDC, InvalidateRect, MonitorFromPoint, MonitorFromWindow, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, UpdateWindow,
+                HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT,
+            },
         },
         System::{
             LibraryLoader::GetModuleHandleW,
             Threading::{AttachThreadInput, GetCurrentThreadId},
         },
         UI::{
-            Controls::{
-                CloseThemeData, DrawThemeBackgroundEx, OpenThemeDataEx, HTHEME, MC_CHECKMARKDISABLED, MC_CHECKMARKNORMAL, MENU_POPUPCHECK, MENU_POPUPSUBMENU, MSM_DISABLED, MSM_NORMAL, OTD_NONCLIENT,
-            },
             Input::KeyboardAndMouse::{
                 GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
                 MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN,
             },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetSystemMetrics,
-                GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor,
-                SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND,
-                CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SM_CXHSCROLL, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD,
-                WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN,
-                WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP,
+                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetAncestor, GetClientRect, GetCursorPos, GetMessageW, GetParent, GetPropW, GetWindow, GetWindowRect,
+                GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, PostThreadMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW,
+                SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, TranslateMessage, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW,
+                GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, MSG, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+                SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND,
+                WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW,
+                WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
 };
 
 const HOOK_PROP_NAME: &str = "WCPOPUP_KEYBOARD_HOOK";
-const LR_BUTTON_SIZE: i32 = 25;
-// iPaddedBorderWidth = 4px
-const ROUND_CORNER_MARGIN: i32 = 4;
+// https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/geometry
+const CORNER_RADIUS: i32 = 8;
 const SHOW_SUBMENU_TIMER_ID: usize = 500;
 const HIDE_SUBMENU_TIMER_ID: usize = 501;
 const FADE_EFFECT_TIME: u32 = 120;
@@ -115,9 +115,22 @@ pub enum MenuType {
     Submenu,
 }
 
+#[derive(Clone, Copy, Debug)]
 struct Size {
     width: i32,
     height: i32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Button {
+    left: ButtonSize,
+    right: ButtonSize,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ButtonSize {
+    width: i32,
+    margins: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +141,7 @@ struct DisplayPoint {
     reverse: bool,
 }
 
-/// Popup Menu
+/// Context Menu.
 #[derive(Debug, Clone)]
 pub struct Menu {
     pub hwnd: HWND,
@@ -150,28 +163,6 @@ impl Default for Menu {
     }
 }
 
-#[derive(Debug, Clone)]
-struct MenuData {
-    menu_type: MenuType,
-    items: Vec<MenuItem>,
-    h_theme: Option<Rc<HTHEME>>,
-    win_subclass_id: Option<u32>,
-    selected_index: i32,
-    width: i32,
-    height: i32,
-    visible_submenu_index: i32,
-    theme: Theme,
-    #[cfg(feature = "accelerator")]
-    haccel: Option<Rc<HACCEL>>,
-    #[cfg(feature = "accelerator")]
-    accelerators: HashMap<u16, String>,
-    size: MenuSize,
-    color: ThemeColor,
-    corner: Corner,
-    thread_id: u32,
-    parent: HWND,
-}
-
 struct PopupInfo {
     menu_thread_id: u32,
     current_thread_id: u32,
@@ -180,8 +171,8 @@ struct PopupInfo {
 }
 
 impl Menu {
-    pub(crate) fn create_window(&self, parent: HWND, theme: Theme) -> HWND {
-        create_menu_window(parent, theme).unwrap()
+    pub(crate) fn create_window(&self, parent: HWND) -> HWND {
+        create_menu_window(parent).unwrap()
     }
 
     pub fn theme(&self) -> Theme {
@@ -318,42 +309,55 @@ impl Menu {
     }
 
     fn recalculate(&mut self, data: &mut MenuData) {
-        let size = Self::calculate(self, &mut data.items, &data.size, data.theme, data.corner).unwrap();
+        let size = Self::calculate(self, &mut data.items, &data.config, data.theme, data.config.corner, data.button).unwrap();
         data.width = size.width;
         data.height = size.height;
         set_menu_data(self.hwnd, data);
     }
 
-    fn calculate(&mut self, items: &mut [MenuItem], size: &MenuSize, theme: Theme, corner: Corner) -> Result<Size, Error> {
-        // Add top margin
+    fn calculate(&mut self, items: &mut [MenuItem], config: &Config, theme: Theme, corner: Corner, button: Button) -> Result<Size, Error> {
         let mut width = 0;
-        let mut height = size.vertical_margin;
+        let mut height = 0;
+
+        // Add padding
+        height += config.size.vertical_padding;
+        // Add border size
+        height += config.size.border_size;
 
         if corner == Corner::Round {
-            height += ROUND_CORNER_MARGIN;
+            height += CORNER_RADIUS;
         }
 
+        let factory = create_write_factory();
+        // Calculate item top, left, bottom and menu size
         for (index, item) in items.iter_mut().enumerate() {
             item.index = index as i32;
 
             item.top = height;
-            let (item_width, item_height) = measure_item(self.hwnd, size, item, theme)?;
+            item.left = config.size.border_size + config.size.horizontal_padding;
+            let (item_width, item_height) = measure_item(&factory, config, item, theme, button)?;
             item.bottom = item.top + item_height;
 
             width = std::cmp::max(width, item_width);
             height += item_height;
         }
 
-        // Add bottom and left/right margin
-        width += size.horizontal_margin * 2;
-        height += size.vertical_margin;
-
-        if corner == Corner::Round {
-            height += ROUND_CORNER_MARGIN;
+        // Calculate item right
+        for item in items {
+            item.right = item.left + width;
         }
 
-        width += size.border_size * 2;
-        height += size.border_size * 2;
+        // Add padding
+        width += config.size.horizontal_padding * 2;
+        height += config.size.vertical_padding;
+
+        if corner == Corner::Round {
+            height += CORNER_RADIUS;
+        }
+
+        // Add border size
+        width += config.size.border_size * 2;
+        height += config.size.border_size;
 
         self.width = width;
         self.height = height;
@@ -560,8 +564,6 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             if data.menu_type == MenuType::Main {
                 let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
-                let h_theme = get_h_theme(window, data);
-                CloseThemeData(h_theme).unwrap();
             }
 
             #[cfg(feature = "accelerator")]
@@ -571,6 +573,8 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 }
             }
 
+            let _ = Box::from_raw(data);
+
             DefWindowProcW(window, msg, wparam, lparam)
         }
 
@@ -578,8 +582,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let hdc = HDC(wparam.0 as isize);
             let data = get_menu_data(window);
             paint_background(window, data, Some(hdc));
-            let h_theme = get_h_theme(window, data);
-            paint(hdc, data, &data.items, h_theme).unwrap();
+            paint(hdc, data, &data.items).unwrap();
             LRESULT(1)
         }
 
@@ -591,8 +594,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         WM_PAINT => {
             let data = get_menu_data(window);
-            let h_theme = get_h_theme(window, data);
-            on_paint(window, data, h_theme).unwrap();
+            on_paint(window, data).unwrap();
             LRESULT(0)
         }
 
@@ -751,14 +753,13 @@ fn on_menu_item_selected(data: &mut MenuData, index: usize) -> bool {
     }
 
     // If disabled, ignore
-    if (data.items[index].state.0 & MENU_DISABLED.0) != 0 {
+    if data.items[index].disabled {
         return false;
     }
 
     // toggle checkbox
     if data.items[index].menu_item_type == MenuItemType::Checkbox {
-        let checked = (data.items[index].state.0 & MENU_CHECKED.0) != 0;
-        toggle_checked(&mut data.items[index], !checked);
+        data.items[index].checked = !data.items[index].checked;
     }
 
     // toggle radio checkbox
@@ -904,56 +905,60 @@ fn index_of_item(data: &mut MenuData, uuid: u16) -> Option<(&mut MenuData, usize
 }
 
 fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
-    unsafe {
-        let dc = if let Some(hdc) = hdc {
-            hdc
-        } else {
-            GetWindowDC(hwnd)
+    let dc = if let Some(hdc) = hdc {
+        hdc
+    } else {
+        unsafe { GetWindowDC(hwnd) }
+    };
+
+    if dc.0 == 0 {
+        return;
+    }
+
+    let scheme = get_color_scheme(data);
+
+    let mut client_rect = RECT::default();
+    unsafe { GetClientRect(hwnd, &mut client_rect).unwrap() };
+
+    unsafe { data.dc_render_target.BindDC(dc, &client_rect).unwrap() };
+    unsafe { data.dc_render_target.BeginDraw() };
+
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None).unwrap() };
+
+    unsafe { data.dc_render_target.FillRectangle(&to_2d_rect(&client_rect), &brush) };
+
+    let menu_rect = RECT {
+        left: client_rect.left + data.config.size.border_size,
+        top: client_rect.top + data.config.size.border_size,
+        right: client_rect.right - data.config.size.border_size,
+        bottom: client_rect.bottom - data.config.size.border_size,
+    };
+
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.background_color), None).unwrap() };
+
+    if data.config.corner == Corner::Round {
+        unsafe {
+            data.dc_render_target.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: to_2d_rect(&menu_rect),
+                    radiusX: CORNER_RADIUS as f32,
+                    radiusY: CORNER_RADIUS as f32,
+                },
+                &brush,
+            )
         };
+    } else {
+        unsafe { data.dc_render_target.FillRectangle(&to_2d_rect(&menu_rect), &brush) };
+    }
 
-        if dc.0 == 0 {
-            return;
-        }
+    unsafe { data.dc_render_target.EndDraw(None, None).unwrap() };
 
-        let scheme = get_color_scheme(data);
-
-        let mut client_rect = RECT::default();
-        GetClientRect(hwnd, &mut client_rect).unwrap();
-
-        let hbr = CreateSolidBrush(COLORREF(scheme.border));
-        FillRect(dc, &client_rect, hbr);
-        let _ = DeleteObject(hbr);
-
-        let menu_rect = RECT {
-            left: client_rect.left + data.size.border_size,
-            top: client_rect.top + data.size.border_size,
-            right: client_rect.right - data.size.border_size,
-            bottom: client_rect.bottom - data.size.border_size,
-        };
-
-        let hbr = CreateSolidBrush(COLORREF(scheme.background_color));
-
-        if data.corner == Corner::Round {
-            let pen = CreatePen(PS_SOLID, 0, COLORREF(scheme.background_color));
-            let old_pen = SelectObject(dc, pen);
-            let old_brush = SelectObject(dc, hbr);
-            let round_dize = ROUND_CORNER_MARGIN * 2;
-            let _ = RoundRect(dc, menu_rect.left, menu_rect.top, menu_rect.right, menu_rect.bottom, round_dize, round_dize);
-            SelectObject(dc, old_pen);
-            SelectObject(dc, old_brush);
-            let _ = DeleteObject(old_pen);
-        } else {
-            FillRect(dc, &menu_rect, hbr);
-        }
-        let _ = DeleteObject(hbr);
-
-        if hdc.is_none() {
-            ReleaseDC(hwnd, dc);
-        }
+    if hdc.is_none() {
+        unsafe { ReleaseDC(hwnd, dc) };
     }
 }
 
-fn on_paint(hwnd: HWND, data: &MenuData, h_theme: HTHEME) -> Result<(), Error> {
+fn on_paint(hwnd: HWND, data: &MenuData) -> Result<(), Error> {
     let mut paint_struct = PAINTSTRUCT::default();
     let dc = unsafe { BeginPaint(hwnd, &mut paint_struct) };
 
@@ -964,9 +969,9 @@ fn on_paint(hwnd: HWND, data: &MenuData, h_theme: HTHEME) -> Result<(), Error> {
     let index = index_from_rect(data, paint_struct.rcPaint);
 
     if index.is_none() {
-        paint(dc, data, &data.items, h_theme)?;
+        paint(dc, data, &data.items)?;
     } else {
-        paint(dc, data, &vec![data.items[index.unwrap() as usize].clone()], h_theme)?;
+        paint(dc, data, &vec![data.items[index.unwrap() as usize].clone()])?;
     }
 
     let _ = unsafe { EndPaint(hwnd, &paint_struct) };
@@ -974,138 +979,194 @@ fn on_paint(hwnd: HWND, data: &MenuData, h_theme: HTHEME) -> Result<(), Error> {
     Ok(())
 }
 
-fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>, h_theme: HTHEME) -> Result<(), Error> {
+fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>) -> Result<(), Error> {
     let scheme = get_color_scheme(data);
-    let selected_color = unsafe { CreateSolidBrush(COLORREF(scheme.hover_background_color)) };
-    let normal_color = unsafe { CreateSolidBrush(COLORREF(scheme.background_color)) };
+
+    let client_rect = RECT {
+        left: 0,
+        top: 0,
+        right: data.width,
+        bottom: data.height,
+    };
+
+    unsafe { data.dc_render_target.BindDC(dc, &client_rect).unwrap() };
+    unsafe { data.dc_render_target.BeginDraw() };
 
     for item in items {
-        let whole_item_rect = get_item_rect(data, item);
+        let whole_item_rect = get_item_rect(item);
 
-        let disabled = (item.state.0 & MENU_DISABLED.0) != 0;
-        let checked = (item.state.0 & MENU_CHECKED.0) != 0;
+        let disabled = item.disabled;
+        let checked = item.checked;
+        let selected = item.index == data.selected_index && !disabled;
 
-        if item.index == data.selected_index && !disabled {
-            unsafe { FillRect(dc, &whole_item_rect, selected_color) };
-        } else {
-            unsafe { FillRect(dc, &whole_item_rect, normal_color) };
-        }
-
-        // Rect for text, checkmark and submenu icon
-        let border_size = data.size.border_size;
-        let item_rect = RECT {
-            left: data.size.horizontal_margin + border_size,
-            top: item.top + border_size,
-            right: data.width - data.size.horizontal_margin - border_size,
-            bottom: item.bottom + border_size,
-        };
+        fill_background(data, &whole_item_rect, scheme, selected)?;
 
         match item.menu_item_type {
             MenuItemType::Separator => {
                 // Use whole item rect to draw from left to right
-                draw_separator(dc, scheme, whole_item_rect)?;
+                draw_separator(data, &whole_item_rect, scheme)?;
             }
 
             _ => {
-                if checked {
-                    let mut rect = RECT {
-                        left: item_rect.left,
-                        top: item_rect.top,
-                        right: item_rect.left + LR_BUTTON_SIZE,
-                        bottom: item_rect.top + LR_BUTTON_SIZE,
-                    };
-                    // center vertically
-                    let _ = unsafe { OffsetRect(&mut rect, 0, ((item_rect.bottom - item_rect.top) - (rect.bottom - rect.top)) / 2) };
-                    let mut check_rect = rect;
-                    let _ = unsafe { InflateRect(&mut check_rect as *mut _, -1, -1) };
-                    if disabled {
-                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKDISABLED.0, &check_rect, None)? };
-                    } else {
-                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPCHECK.0, MC_CHECKMARKNORMAL.0, &check_rect, None)? };
-                    }
-                }
+                let item_rect = RECT {
+                    left: whole_item_rect.left + data.config.size.item_horizontal_padding,
+                    top: whole_item_rect.top + data.config.size.item_vertical_padding,
+                    right: whole_item_rect.right - data.config.size.item_horizontal_padding,
+                    bottom: whole_item_rect.bottom - data.config.size.item_vertical_padding,
+                };
 
-                let mut text_rect = item_rect;
-                // Keep space for check mark and submenu mark
-                text_rect.left += LR_BUTTON_SIZE;
-                text_rect.right -= LR_BUTTON_SIZE;
+                if checked {
+                    draw_checkmark(data, &item_rect, scheme, disabled)?;
+                }
 
                 if item.menu_item_type == MenuItemType::Submenu {
-                    let mut arrow_rect = item_rect;
-                    let arrow_size = unsafe { GetSystemMetrics(SM_CXHSCROLL) };
-                    arrow_rect.left = item_rect.right - arrow_size;
-
-                    // center vertically
-                    let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
-                    if disabled {
-                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_DISABLED.0, &arrow_rect, None)? };
-                    } else {
-                        unsafe { DrawThemeBackgroundEx(h_theme, dc, MENU_POPUPSUBMENU.0, MSM_NORMAL.0, &arrow_rect, None)? };
-                    }
+                    draw_submenu_arrow(data, &item_rect, scheme, disabled)?;
                 }
 
-                draw_menu_text(dc, scheme, &text_rect, item, data, disabled)?;
-                unsafe { ExcludeClipRect(dc, item_rect.left, item_rect.top, item_rect.right, item_rect.bottom) };
+                draw_menu_text(data, item, &item_rect, scheme, disabled)?;
             }
         }
     }
 
-    let _ = unsafe { DeleteObject(selected_color) };
-    let _ = unsafe { DeleteObject(normal_color) };
+    unsafe { data.dc_render_target.EndDraw(None, None).unwrap() };
 
     Ok(())
 }
 
-fn draw_separator(dc: HDC, scheme: &ColorScheme, rect: RECT) -> Result<(), Error> {
-    let mut separator_rect = rect;
-
-    separator_rect.top += (rect.bottom - rect.top) / 2;
-
-    let pen = unsafe { CreatePen(PS_SOLID, 1, COLORREF(scheme.separator)) };
-    let old_pen = unsafe { SelectObject(dc, pen) };
-    let _ = unsafe { MoveToEx(dc, separator_rect.left, separator_rect.top, None) };
-    let _ = unsafe { LineTo(dc, separator_rect.right, separator_rect.top) };
-    unsafe { SelectObject(dc, old_pen) };
-    let _ = unsafe { DeleteObject(pen) };
-
-    Ok(())
-}
-
-fn draw_menu_text(dc: HDC, scheme: &ColorScheme, rect: &RECT, item: &MenuItem, data: &MenuData, disabled: bool) -> Result<(), Error> {
-    let mut text_rect = *rect;
-
-    unsafe { SetBkMode(dc, TRANSPARENT) };
-    if disabled {
-        unsafe { SetTextColor(dc, COLORREF(scheme.disabled)) };
+fn fill_background(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, selected: bool) -> Result<(), Error> {
+    let brush = if selected {
+        unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.hover_background_color), None)? }
     } else {
-        unsafe { SetTextColor(dc, COLORREF(scheme.color)) };
-    }
+        unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.background_color), None)? }
+    };
 
-    let mut menu_font = get_font(data.theme, &data.size, false)?;
-    let font = unsafe { CreateFontIndirectW(&menu_font) };
-    let old_font = unsafe { SelectObject(dc, font) };
+    unsafe { data.dc_render_target.FillRectangle(&to_2d_rect(item_rect), &brush) };
 
-    unsafe { DrawTextW(dc, &mut encode_wide(&item.label), &mut text_rect, DT_SINGLELINE | DT_LEFT | DT_VCENTER) };
+    Ok(())
+}
+
+fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    // Keep space for check mark and submenu mark
+    let text_rect = RECT {
+        left: item_rect.left + (data.button.left.width + data.button.left.margins),
+        top: item_rect.top,
+        right: item_rect.right - (data.button.right.width + data.button.right.margins),
+        bottom: item_rect.bottom,
+    };
+
+    let text_2d_rect = to_2d_rect(&text_rect);
+    let factory = create_write_factory();
+    let format = get_text_format(&factory, data.theme, &data.config, TextAlignment::Leading)?;
+
+    let color = if disabled {
+        scheme.disabled
+    } else {
+        scheme.color
+    };
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(color), None) }?;
+
+    unsafe { data.dc_render_target.DrawText(encode_wide(&item.label).as_mut(), &format, &text_2d_rect, &brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL) };
 
     if !item.accelerator.is_empty() {
-        if disabled {
-            unsafe { SetTextColor(dc, COLORREF(scheme.disabled)) };
-        } else {
-            unsafe { SetTextColor(dc, COLORREF(scheme.accelerator)) };
-        }
-
-        // Draw accelerator text with font weight 400
-        if !menu_font.lfWeight != 400 {
-            menu_font.lfWeight = 400;
-            let font = unsafe { CreateFontIndirectW(&menu_font) };
-            unsafe { SelectObject(dc, font) };
-        }
-
-        unsafe { DrawTextW(dc, &mut encode_wide(&item.accelerator), &mut text_rect, DT_SINGLELINE | DT_RIGHT | DT_VCENTER) };
+        unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING) }?;
+        unsafe { data.dc_render_target.DrawText(encode_wide(&item.accelerator).as_mut(), &format, &text_2d_rect, &brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL) };
     }
 
-    unsafe { SelectObject(dc, old_font) };
-    let _ = unsafe { DeleteObject(font) };
+    Ok(())
+}
+
+fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    let margin = data.button.left.margins / 2;
+    let button = data.button.left.width;
+    let mut check_rect = RECT {
+        left: item_rect.left + margin,
+        top: item_rect.top,
+        right: item_rect.left + margin + button + margin,
+        bottom: item_rect.top + button,
+    };
+
+    // center vertically
+    let _ = unsafe { OffsetRect(&mut check_rect, 0, ((item_rect.bottom - item_rect.top) - (check_rect.bottom - check_rect.top)) / 2) };
+
+    let color = if disabled {
+        scheme.disabled
+    } else {
+        scheme.color
+    };
+
+    let dc5 = get_device_context(&data.dc_render_target);
+
+    let element = unsafe { data.check_svg.GetRoot() }?;
+    set_fill_color(&element, color);
+    set_stroke_color(&element, color);
+
+    let translation = Matrix3x2::translation(check_rect.left as f32, check_rect.top as f32);
+    unsafe { dc5.SetTransform(&translation) };
+    unsafe { dc5.DrawSvgDocument(&data.check_svg) };
+    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+
+    Ok(())
+}
+
+fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    let margin = data.button.right.margins / 2;
+    let button = data.button.right.width;
+    let mut arrow_rect = RECT {
+        left: item_rect.right - (margin + button),
+        top: item_rect.top,
+        right: item_rect.right - margin,
+        bottom: item_rect.top + button,
+    };
+
+    // center vertically
+    let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
+    let color = if disabled {
+        scheme.disabled
+    } else {
+        scheme.color
+    };
+
+    let dc5 = get_device_context(&data.dc_render_target);
+
+    let element = unsafe { data.submenu_svg.GetRoot() }?;
+    set_fill_color(&element, color);
+    set_stroke_color(&element, color);
+
+    let translation = Matrix3x2::translation(arrow_rect.left as f32, arrow_rect.top as f32);
+    unsafe { dc5.SetTransform(&translation) };
+    unsafe { dc5.DrawSvgDocument(&data.submenu_svg) };
+    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+
+    Ok(())
+}
+
+fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<(), Error> {
+    let separator_rect = RECT {
+        left: rect.left,
+        top: rect.top + (rect.bottom - rect.top) / 2,
+        right: rect.right,
+        bottom: rect.bottom,
+    };
+    let rect = to_2d_rect(&separator_rect);
+
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None).unwrap() };
+
+    // Add 0.5 to disable antialiasing for line
+    unsafe {
+        data.dc_render_target.DrawLine(
+            D2D_POINT_2F {
+                x: rect.left + 0.5,
+                y: rect.top + 0.5,
+            },
+            D2D_POINT_2F {
+                x: rect.right + 0.5,
+                y: rect.top + 0.5,
+            },
+            &brush,
+            1.0,
+            None,
+        )
+    }
 
     Ok(())
 }
@@ -1159,7 +1220,7 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
 }
 
 fn change_selection(data: &mut MenuData, hwnd: HWND, screen_point: POINT) -> bool {
-    // Menu can be not visible yet due to timer or animation
+    // Menu is yet to be visible due to timer or animation
     if unsafe { !IsWindowVisible(hwnd) }.as_bool() {
         return false;
     }
@@ -1177,14 +1238,18 @@ fn change_selection(data: &mut MenuData, hwnd: HWND, screen_point: POINT) -> boo
 
         if selected_index >= 0 {
             let item = &data.items[selected_index as usize];
-            let rect = get_item_rect(data, item);
-            let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
+            if !item.disabled {
+                let rect = get_item_rect(item);
+                let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
+            }
         }
 
         if data.selected_index >= 0 {
             let item = &data.items[data.selected_index as usize];
-            let rect = get_item_rect(data, item);
-            let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
+            if !item.disabled {
+                let rect = get_item_rect(item);
+                let _ = unsafe { InvalidateRect(hwnd, Some(&rect), false) };
+            }
         }
     };
 
@@ -1207,8 +1272,12 @@ fn toggle_submenu(data: &mut MenuData, selected_index: i32) -> bool {
     }
 
     if data.visible_submenu_index < 0 && data.items[selected_index as usize].menu_item_type == MenuItemType::Submenu {
-        data.visible_submenu_index = selected_index;
-        should_show_submenu = true;
+        if data.items[selected_index as usize].disabled {
+            data.visible_submenu_index = -1;
+        } else {
+            data.visible_submenu_index = selected_index;
+            should_show_submenu = true;
+        }
     }
 
     should_show_submenu
@@ -1242,13 +1311,13 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         let pt = get_display_point(submenu_hwnd, main_menu_rect.right, main_menu_rect.top + item.top, submenu_data.width, submenu_data.height);
 
         let x = if pt.rtl {
-            main_menu_rect.left - submenu_data.width - main_menu_data.size.submenu_offset
+            main_menu_rect.left - submenu_data.width - main_menu_data.config.size.submenu_offset
         } else {
-            main_menu_rect.right + main_menu_data.size.submenu_offset
+            main_menu_rect.right + main_menu_data.config.size.submenu_offset
         };
 
-        let round_corner_margin = if main_menu_data.corner == Corner::Round {
-            ROUND_CORNER_MARGIN
+        let round_corner_size = if main_menu_data.config.corner == Corner::Round {
+            CORNER_RADIUS
         } else {
             0
         };
@@ -1258,11 +1327,11 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
                 y: item.bottom - submenu_data.height,
             };
             let _ = ClientToScreen(hwnd, &mut reversed_point);
-            // Add top + bottom margin
-            reversed_point.y + main_menu_data.size.vertical_margin * 2 + round_corner_margin
+            // Add top/bottom padding, round corner size, and border size
+            reversed_point.y + main_menu_data.config.size.vertical_padding * 2 + round_corner_size + main_menu_data.config.size.border_size
         } else {
-            // Reduce top margin
-            main_menu_rect.top + item.top - main_menu_data.size.vertical_margin - round_corner_margin
+            // Reduce top padding and border size
+            main_menu_rect.top + item.top - main_menu_data.config.size.vertical_padding - round_corner_size - main_menu_data.config.size.border_size
         };
 
         SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
@@ -1292,13 +1361,12 @@ unsafe extern "system" fn delay_hide_submenu(hwnd: HWND, _msg: u32, id: usize, _
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 }
 
-fn get_item_rect(data: &MenuData, item: &MenuItem) -> RECT {
-    let border_size = data.size.border_size;
+fn get_item_rect(item: &MenuItem) -> RECT {
     RECT {
-        left: border_size,
-        top: item.top + border_size,
-        right: data.width - border_size,
-        bottom: item.bottom + border_size,
+        left: item.left,
+        top: item.top,
+        right: item.right,
+        bottom: item.bottom,
     }
 }
 
@@ -1362,16 +1430,6 @@ fn get_hwnd_from_point(hwnd: HWND) -> Option<HWND> {
     None
 }
 
-fn get_h_theme(hwnd: HWND, data: &MenuData) -> HTHEME {
-    if data.h_theme.is_some() {
-        return HTHEME(data.h_theme.as_ref().unwrap().0);
-    }
-
-    let parent = unsafe { GetParent(hwnd) };
-    let parent_data = get_menu_data(parent);
-    HTHEME(parent_data.h_theme.as_ref().unwrap().0)
-}
-
 fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) {
     let data = get_menu_data_mut(hwnd);
     if data.menu_type == MenuType::Submenu {
@@ -1417,17 +1475,8 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
         }
     };
 
-    allow_dark_mode_for_window(hwnd, should_be_dark);
-    set_preferred_app_mode(new_theme);
-
-    let old_htheme = get_h_theme(hwnd, data);
-    unsafe { CloseThemeData(old_htheme).unwrap() };
-    let h_theme = unsafe { OpenThemeDataEx(hwnd, w!("Menu"), OTD_NONCLIENT) };
-    data.h_theme = Some(Rc::new(h_theme));
     data.theme = new_theme;
-
     set_window_border_color(hwnd, data).unwrap();
-
     set_menu_data(hwnd, data);
     let _ = unsafe { UpdateWindow(hwnd) };
 
@@ -1444,7 +1493,7 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
     }
 }
 
-fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
+fn create_menu_window(parent: HWND) -> Result<HWND, Error> {
     let class_name = w!("WC_POPUP");
 
     let class = WNDCLASSEXW {
@@ -1472,14 +1521,6 @@ fn create_menu_window(parent: HWND, theme: Theme) -> Result<HWND, Error> {
     };
 
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
-
-    let should_be_dark = if theme == Theme::System {
-        is_sys_dark_color()
-    } else {
-        theme == Theme::Dark
-    };
-    allow_dark_mode_for_window(hwnd, should_be_dark);
-    set_preferred_app_mode(theme);
 
     Ok(hwnd)
 }
