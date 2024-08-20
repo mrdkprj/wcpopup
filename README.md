@@ -19,10 +19,10 @@ Use ManuBuilder to create a Menu with MenuItems, and then call Menu.popup_at() t
 When a MenuItem is clicked, SelectedMenuItem data is returned.
 
 ```rust
-fn example(hwnd: HWND) {
-    let mut builder = MenuBuilder::new(hwnd);
+fn example(window_handle: isize) {
+    let mut builder = MenuBuilder::new(window_handle);
 
-    builder.check("menu_item1", "Fit To Window", "", true, None);
+    builder.check("menu_item1", "Fit To Window", true, None);
     builder.separator();
     builder.text_with_accelerator("menu_item2", "Playlist", None, "Ctrl+P");
     builder.text_with_accelerator("menu_item3", "Toggle Fullscreen", None, "F11");
@@ -31,9 +31,9 @@ fn example(hwnd: HWND) {
     builder.text_with_accelerator("menu_item5", "Capture", None, "Ctrl+S");
     builder.separator();
 
-    let mut submenu = builder.submenu("Theme", None);
-    submenu.radio("submenu_item1", "Light", "Light", "Theme", true, None);
-    submenu.radio("submenu_item2", "Dark", "Dark", "Theme", false, None);
+    let mut submenu = builder.submenu("submenu1", "Theme", None);
+    submenu.radio("submenu_item1", "Light", "Theme", true, None);
+    submenu.radio("submenu_item2", "Dark", "Theme", false, None);
     submenu.build().unwrap();
 
     let menu = builder.build().unwrap();

@@ -22,20 +22,20 @@ use windows::{
 
 static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
 
-pub(crate) fn get_menu_data<'a>(hwnd: HWND) -> &'a MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
+pub(crate) fn get_menu_data<'a>(hwnd: isize) -> &'a MenuData {
+    let userdata = unsafe { GetWindowLongPtrW(HWND(hwnd), GWL_USERDATA) };
     let item_data_ptr = userdata as *const MenuData;
     unsafe { &*item_data_ptr }
 }
 
-pub(crate) fn get_menu_data_mut<'a>(hwnd: HWND) -> &'a mut MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
+pub(crate) fn get_menu_data_mut<'a>(hwnd: isize) -> &'a mut MenuData {
+    let userdata = unsafe { GetWindowLongPtrW(HWND(hwnd), GWL_USERDATA) };
     let item_data_ptr = userdata as *mut MenuData;
     unsafe { &mut *item_data_ptr }
 }
 
-pub(crate) fn set_menu_data(hwnd: HWND, data: &mut MenuData) {
-    unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
+pub(crate) fn set_menu_data(hwnd: isize, data: &mut MenuData) {
+    unsafe { SetWindowLongPtrW(HWND(hwnd), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -129,10 +129,10 @@ pub(crate) fn get_current_theme(theme: Theme) -> Theme {
 }
 
 pub(crate) fn get_color_scheme(data: &MenuData) -> &ColorScheme {
-    let is_dark = if data.theme == Theme::System {
+    let is_dark = if data.current_theme == Theme::System {
         is_sys_dark_color()
     } else {
-        data.theme == Theme::Dark
+        data.current_theme == Theme::Dark
     };
 
     if is_dark {
@@ -155,8 +155,9 @@ pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(*HUXTHEME) };
 }
 
-pub(crate) fn set_window_border_color(hwnd: HWND, data: &MenuData) -> Result<(), Error> {
+pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {
     if is_win11() {
+        let hwnd = HWND(window_handle);
         if data.config.size.border_size > 0 {
             unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
         } else {

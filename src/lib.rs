@@ -6,13 +6,13 @@
 //! ## Example
 //!
 //! Use ManuBuilder to create a Menu with MenuItems, and then call Menu.popup_at() to show Menu.
-//! When a MenuItem is clicked, SelectedMenuItem data is returned.
+//! When a MenuItem is clicked, the selected MenuItem data is returned.
 //!
 //! ```no_run
-//! fn example(hwnd: HWND) {
-//!   let mut builder = MenuBuilder::new(hwnd);
+//! fn example(window_handle: isize) {
+//!   let mut builder = MenuBuilder::new(window_handle);
 //!
-//!   builder.check("menu_item1", "Menu Label 1", "Value 1", true, None);
+//!   builder.check("menu_item1", "Menu Label 1", true, None);
 //!   builder.separator();
 //!   builder.text_with_accelerator("menu_item2", "Menu Label 2", None, "Ctrl+P");
 //!   builder.text_with_accelerator("menu_item3", "Menu Label 3", None, "F11");
@@ -21,14 +21,16 @@
 //!   builder.text_with_accelerator("menu_item5", "Menu Label 5", None, "Ctrl+S");
 //!   builder.separator();
 //!
-//!   let mut submenu = builder.submenu("Submenu", None);
-//!   submenu.radio("submenu_item1", "Menu Label 1", "Menu Value 2", "Submenu1", true, None);
-//!   submenu.radio("submenu_item2", "Menu Label 2", "Menu Value 3", "Submenu1", false, None);
+//!   let mut submenu = builder.submenu("Submenu1", "Submenu", None);
+//!   submenu.radio("submenu_item1", "Menu Label 1", "Submenu1", true, None);
+//!   submenu.radio("submenu_item2", "Menu Label 2", "Submenu1", false, None);
 //!   submenu.build().unwrap();
 //!
 //!   let menu = builder.build().unwrap();
 //!
 //!   let selected_item = menu.popup_at(100, 100);
+//!   // Or popup_at_async
+//!   // let selected_item = menu.popup_at_async(100, 100).await
 //! }
 //! ```
 mod accelerator;
@@ -43,6 +45,7 @@ pub use builder::*;
 pub use config::*;
 use direct2d::{colorref_to_d2d1_color_f, create_write_factory, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
 pub use menu_item::*;
+use serde::Serialize;
 use util::*;
 
 #[cfg(feature = "accelerator")]
@@ -109,7 +112,7 @@ enum ThemeChangeFactor {
     App,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum MenuType {
     Main,
     Submenu,
@@ -142,11 +145,11 @@ struct DisplayPoint {
 }
 
 /// Context Menu.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Menu {
-    pub hwnd: HWND,
+    pub window_handle: isize,
     pub menu_type: MenuType,
-    parent: HWND,
+    parent_window_handle: isize,
     width: i32,
     height: i32,
 }
@@ -154,9 +157,9 @@ pub struct Menu {
 impl Default for Menu {
     fn default() -> Self {
         Self {
-            hwnd: HWND(0),
+            window_handle: 0,
             menu_type: MenuType::Main,
-            parent: HWND(0),
+            parent_window_handle: 0,
             height: 0,
             width: 0,
         }
@@ -171,43 +174,47 @@ struct PopupInfo {
 }
 
 impl Menu {
-    pub(crate) fn create_window(&self, parent: HWND) -> HWND {
+    pub(crate) fn create_window(&self, parent: isize) -> isize {
         create_menu_window(parent).unwrap()
     }
 
+    pub fn config(&self) -> Config {
+        get_menu_data(self.window_handle).config.clone()
+    }
+
     pub fn theme(&self) -> Theme {
-        let hwnd = if self.menu_type == MenuType::Main {
-            self.hwnd
+        let window_handle = if self.menu_type == MenuType::Main {
+            self.window_handle
         } else {
-            self.parent
+            self.parent_window_handle
         };
-        let data = get_menu_data(hwnd);
-        data.theme
+        let data = get_menu_data(window_handle);
+        data.current_theme
     }
 
     /// Sets the theme for Menu.
     pub fn set_theme(&self, theme: Theme) {
-        let hwnd = if self.menu_type == MenuType::Main {
-            self.hwnd
+        let window_handle = if self.menu_type == MenuType::Main {
+            self.window_handle
         } else {
-            self.parent
+            self.parent_window_handle
         };
-        on_theme_change(hwnd, Some(theme), ThemeChangeFactor::User);
+        on_theme_change(window_handle, Some(theme), ThemeChangeFactor::User);
     }
 
     /// Gets all MenuItems of Menu.
     pub fn items(&self) -> Vec<MenuItem> {
-        get_menu_data(self.hwnd).items.clone()
+        get_menu_data(self.window_handle).items.clone()
     }
 
     /// Gets the MenuItem with the specified id.
     pub fn get_menu_item_by_id(&self, id: &str) -> Option<MenuItem> {
-        let hwnd = if self.menu_type == MenuType::Main {
-            self.hwnd
+        let window_handle = if self.menu_type == MenuType::Main {
+            self.window_handle
         } else {
-            self.parent
+            self.parent_window_handle
         };
-        let data = get_menu_data(hwnd);
+        let data = get_menu_data(window_handle);
         find_by_id(data, id)
     }
 
@@ -216,8 +223,8 @@ impl Menu {
         #[cfg(feature = "accelerator")]
         Self::reset_haccel(self, &item, false);
 
-        let data = get_menu_data_mut(self.hwnd);
-        item.hwnd = self.hwnd;
+        let data = get_menu_data_mut(self.window_handle);
+        item.menu_window_handle = self.window_handle;
         data.items.push(item);
         Self::recalculate(self, data);
     }
@@ -227,15 +234,15 @@ impl Menu {
         #[cfg(feature = "accelerator")]
         Self::reset_haccel(self, &item, false);
 
-        let data = get_menu_data_mut(self.hwnd);
-        item.hwnd = self.hwnd;
+        let data = get_menu_data_mut(self.window_handle);
+        item.menu_window_handle = self.window_handle;
         data.items.insert(index as usize, item);
         Self::recalculate(self, data);
     }
 
     /// Removes the MenuItem at the specified index.
     pub fn remove_at(&mut self, index: u32) {
-        let data = get_menu_data_mut(self.hwnd);
+        let data = get_menu_data_mut(self.window_handle);
         #[allow(unused_variables)]
         let removed_item = data.items.remove(index as usize);
         Self::recalculate(self, data);
@@ -245,7 +252,7 @@ impl Menu {
 
     /// Removes the MenuItem.
     pub fn remove(&mut self, item: &MenuItem) {
-        let data = get_menu_data_mut(self.hwnd);
+        let data = get_menu_data_mut(self.window_handle);
         let maybe_index = index_of_item(data, item.uuid);
         if let Some((data, index)) = maybe_index {
             #[allow(unused_variables)]
@@ -258,16 +265,18 @@ impl Menu {
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
         unsafe {
-            let ancestor = GetAncestor(self.parent, GA_ROOTOWNER);
+            let hwnd = HWND(self.window_handle);
+            let parent_hwnd = HWND(self.parent_window_handle);
+            let ancestor = GetAncestor(parent_hwnd, GA_ROOTOWNER);
             let _ = SetWindowSubclass(
                 if ancestor.0 == 0 {
-                    self.parent
+                    parent_hwnd
                 } else {
                     ancestor
                 },
                 Some(menu_owner_subclass_proc),
                 id,
-                Box::into_raw(Box::new(self.hwnd)) as _,
+                Box::into_raw(Box::new(hwnd)) as _,
             );
         }
     }
@@ -278,13 +287,13 @@ impl Menu {
             return;
         }
 
-        let hwnd = if self.menu_type == MenuType::Main {
-            self.hwnd
+        let window_handle = if self.menu_type == MenuType::Main {
+            self.window_handle
         } else {
-            unsafe { GetParent(self.hwnd) }
+            unsafe { GetParent(HWND(self.window_handle)).0 }
         };
 
-        let data = get_menu_data_mut(hwnd);
+        let data = get_menu_data_mut(window_handle);
 
         let mut accelerators = data.accelerators.clone();
 
@@ -305,17 +314,17 @@ impl Menu {
 
         data.accelerators = accelerators;
 
-        set_menu_data(hwnd, data);
+        set_menu_data(window_handle, data);
     }
 
     fn recalculate(&mut self, data: &mut MenuData) {
-        let size = Self::calculate(self, &mut data.items, &data.config, data.theme, data.config.corner, data.button).unwrap();
+        let size = Self::calculate(self, &mut data.items, &data.config, data.current_theme, data.button).unwrap();
         data.width = size.width;
         data.height = size.height;
-        set_menu_data(self.hwnd, data);
+        set_menu_data(self.window_handle, data);
     }
 
-    fn calculate(&mut self, items: &mut [MenuItem], config: &Config, theme: Theme, corner: Corner, button: Button) -> Result<Size, Error> {
+    fn calculate(&mut self, items: &mut [MenuItem], config: &Config, theme: Theme, button: Button) -> Result<Size, Error> {
         let mut width = 0;
         let mut height = 0;
 
@@ -324,7 +333,7 @@ impl Menu {
         // Add border size
         height += config.size.border_size;
 
-        if corner == Corner::Round {
+        if config.corner == Corner::Round {
             height += CORNER_RADIUS;
         }
 
@@ -351,7 +360,7 @@ impl Menu {
         width += config.size.horizontal_padding * 2;
         height += config.size.vertical_padding;
 
-        if corner == Corner::Round {
+        if config.corner == Corner::Round {
             height += CORNER_RADIUS;
         }
 
@@ -369,25 +378,27 @@ impl Menu {
     }
 
     fn start_popup(&self, x: i32, y: i32, sync: bool) -> PopupInfo {
-        let menu_thread_id = unsafe { GetWindowThreadProcessId(self.hwnd, None) };
+        let hwnd = HWND(self.window_handle);
+        let parent = HWND(self.parent_window_handle);
+        let menu_thread_id = unsafe { GetWindowThreadProcessId(hwnd, None) };
         let current_thread_id = unsafe { GetCurrentThreadId() };
 
         if !sync {
             let _ = unsafe { AttachThreadInput(current_thread_id, menu_thread_id, true) };
-            let data = get_menu_data_mut(self.hwnd);
+            let data = get_menu_data_mut(self.window_handle);
             data.thread_id = current_thread_id;
-            set_menu_data(self.hwnd, data);
+            set_menu_data(self.window_handle, data);
         }
 
         // Activate parent window
-        let _ = unsafe { SetForegroundWindow(self.parent) };
-        let _ = unsafe { SetActiveWindow(self.parent) };
+        let _ = unsafe { SetForegroundWindow(parent) };
+        let _ = unsafe { SetActiveWindow(parent) };
 
-        let pt = get_display_point(self.hwnd, x, y, self.width, self.height);
-        let _ = unsafe { SetWindowPos(self.hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
+        let pt = get_display_point(self.window_handle, x, y, self.width, self.height);
+        let _ = unsafe { SetWindowPos(hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
 
         // Set menu hwnd to property to be used in keyboard hook
-        unsafe { SetPropW(self.hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr()), HANDLE(self.hwnd.0)).unwrap() };
+        unsafe { SetPropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr()), HANDLE(self.window_handle)).unwrap() };
 
         // Set hooks
         let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, menu_thread_id).unwrap() };
@@ -406,11 +417,12 @@ impl Menu {
     }
 
     fn finish_popup(&self, info: PopupInfo) {
+        let hwnd = HWND(self.window_handle);
         let _ = unsafe { ReleaseCapture() };
 
-        let _ = unsafe { ShowWindow(self.hwnd, SW_HIDE) };
+        let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 
-        let _ = unsafe { RemovePropW(self.hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
+        let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
 
         // Unhook hooks
         let _ = unsafe { UnhookWindowsHookEx(info.keyboard_hook) };
@@ -427,8 +439,8 @@ impl Menu {
         let info = Self::start_popup(self, x, y, false);
 
         // Show menu window
-        animate_show_window(self.hwnd);
-        set_capture(self.hwnd);
+        animate_show_window(self.window_handle);
+        set_capture(self.window_handle);
 
         let mut msg = MSG::default();
         let mut selected_item: Option<MenuItem> = None;
@@ -468,8 +480,8 @@ impl Menu {
         let info = Self::start_popup(self, x, y, true);
 
         // Show menu window
-        animate_show_window(self.hwnd);
-        set_capture(self.hwnd);
+        animate_show_window(self.window_handle);
+        set_capture(self.window_handle);
 
         let mut msg = MSG::default();
         let mut selected_item: Option<MenuItem> = None;
@@ -504,12 +516,14 @@ impl Menu {
     }
 }
 
-fn animate_show_window(hwnd: HWND) {
+fn animate_show_window(window_handle: isize) {
+    let hwnd = HWND(window_handle);
     let _ = unsafe { AnimateWindow(hwnd, FADE_EFFECT_TIME, AW_BLEND) };
     let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
 }
 
-fn set_capture(hwnd: HWND) {
+fn set_capture(window_handle: isize) {
+    let hwnd = HWND(window_handle);
     // Prevent mouse input on window beneath menu
     unsafe { SetCapture(hwnd) };
 
@@ -551,7 +565,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
     match msg {
         WM_INACTIVATE => {
             if IsWindowVisible(window).as_bool() {
-                let id = init_menu_data(window);
+                let id = init_menu_data(window.0);
                 post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
             }
 
@@ -560,7 +574,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         WM_DESTROY => {
             free_library();
-            let data = get_menu_data_mut(window);
+            let data = get_menu_data_mut(window.0);
             if data.menu_type == MenuType::Main {
                 let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
@@ -580,20 +594,20 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         WM_PRINTCLIENT => {
             let hdc = HDC(wparam.0 as isize);
-            let data = get_menu_data(window);
+            let data = get_menu_data(window.0);
             paint_background(window, data, Some(hdc));
             paint(hdc, data, &data.items).unwrap();
             LRESULT(1)
         }
 
         WM_ERASEBKGND => {
-            let data = get_menu_data(window);
+            let data = get_menu_data(window.0);
             paint_background(window, data, None);
             LRESULT(0)
         }
 
         WM_PAINT => {
-            let data = get_menu_data(window);
+            let data = get_menu_data(window.0);
             on_paint(window, data).unwrap();
             LRESULT(0)
         }
@@ -602,13 +616,13 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN);
 
             if should_close_menu {
-                let id = init_menu_data(window);
+                let id = init_menu_data(window.0);
                 post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
                 return LRESULT(0);
             }
 
             #[cfg(feature = "accelerator")]
-            let data = get_menu_data(window);
+            let data = get_menu_data(window.0);
             #[cfg(feature = "accelerator")]
             if let Some(accel) = &data.haccel {
                 let keydown_msg = MSG {
@@ -631,12 +645,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 return LRESULT(0);
             }
 
-            let data = get_menu_data_mut(window);
+            let data = get_menu_data_mut(window.0);
             let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
             if let Some((data, index)) = maybe_index {
                 if on_menu_item_selected(data, index) {
                     let menu_item = data.items[index].clone();
-                    let id = init_menu_data(window);
+                    let id = init_menu_data(window.0);
                     post_message(window, id, WM_MENUCOMMAND, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
                 }
             }
@@ -660,7 +674,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_MOUSEWHEEL => {
-            let id = init_menu_data(window);
+            let id = init_menu_data(window.0);
             post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
             LRESULT(0)
         }
@@ -669,7 +683,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let wide_string_ptr = lparam.0 as *const u16;
             let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or_default();
             if lparam_str == "ImmersiveColorSet" {
-                on_theme_change(window, None, ThemeChangeFactor::SystemSetting);
+                on_theme_change(window.0, None, ThemeChangeFactor::SystemSetting);
             }
 
             DefWindowProcW(window, msg, wparam, lparam)
@@ -682,18 +696,17 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 fn on_mouse_move(window: HWND) {
     let mut pt = POINT::default();
     let _ = unsafe { GetCursorPos(&mut pt) };
-    let data = get_menu_data_mut(window);
+    let data = get_menu_data_mut(window.0);
 
     if data.visible_submenu_index >= 0 {
-        let submenu_hwnd = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().hwnd;
-        let submenu_data = get_menu_data_mut(submenu_hwnd);
-        change_selection(submenu_data, submenu_hwnd, pt);
-        set_menu_data(submenu_hwnd, submenu_data);
+        let submenu_window_handle = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle;
+        let submenu_data = get_menu_data_mut(submenu_window_handle);
+        change_selection(submenu_data, submenu_window_handle, pt);
+        set_menu_data(submenu_window_handle, submenu_data);
     }
 
-    let should_show_submenu = change_selection(data, window, pt);
-    change_selection(data, window, pt);
-    set_menu_data(window, data);
+    let should_show_submenu = change_selection(data, window.0, pt);
+    set_menu_data(window.0, data);
 
     // Show submenu after submenu index is stored
     if should_show_submenu {
@@ -708,7 +721,7 @@ fn on_mouse_down(window: HWND, msg: u32) {
         let _ = unsafe { ReleaseCapture() };
 
         // Close menu
-        let id = init_menu_data(window);
+        let id = init_menu_data(window.0);
         post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
 
         // If mouse input occurs on parent window, send mouse input
@@ -723,7 +736,7 @@ fn on_mouse_up(window: HWND) {
     }
 
     let hwnd = maybe_hwnd.unwrap();
-    let data = get_menu_data_mut(hwnd);
+    let data = get_menu_data_mut(hwnd.0);
     let index = index_from_point(hwnd, get_cursor_point(window), data);
 
     if index < 0 {
@@ -731,9 +744,9 @@ fn on_mouse_up(window: HWND) {
     }
 
     if on_menu_item_selected(data, index as usize) {
-        set_menu_data(hwnd, data);
+        set_menu_data(hwnd.0, data);
         let menu_item = data.items[index as usize].clone();
-        let id = init_menu_data(window);
+        let id = init_menu_data(window.0);
         post_message(hwnd, id, WM_MENUSELECTED, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
     }
 }
@@ -837,7 +850,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
         WM_THEMECHANGED => {
             let hwnd_ptr = dwrefdata as *const HWND;
             let hwnd = unsafe { *hwnd_ptr };
-            on_theme_change(hwnd, None, ThemeChangeFactor::App);
+            on_theme_change(hwnd.0, None, ThemeChangeFactor::App);
             DefSubclassProc(window, msg, wparam, lparam)
         }
 
@@ -845,8 +858,8 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
     }
 }
 
-fn init_menu_data(hwnd: HWND) -> u32 {
-    let data = get_menu_data_mut(hwnd);
+fn init_menu_data(window_handle: isize) -> u32 {
+    let data = get_menu_data_mut(window_handle);
 
     let thread_id = if data.menu_type == MenuType::Main {
         data.thread_id
@@ -859,12 +872,12 @@ fn init_menu_data(hwnd: HWND) -> u32 {
     data.thread_id = 0;
 
     if data.visible_submenu_index >= 0 {
-        let submenu_hwnd = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().hwnd;
-        hide_submenu(submenu_hwnd);
+        let submenu_window_handle = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle;
+        hide_submenu(submenu_window_handle);
     }
     data.visible_submenu_index = -1;
 
-    set_menu_data(hwnd, data);
+    set_menu_data(window_handle, data);
 
     thread_id
 }
@@ -877,8 +890,8 @@ fn find_by_id(data: &MenuData, id: &str) -> Option<MenuItem> {
         }
 
         if item.menu_item_type == MenuItemType::Submenu {
-            let hwnd = item.submenu.as_ref().unwrap().hwnd;
-            let submenu_data = get_menu_data(hwnd);
+            let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+            let submenu_data = get_menu_data(submenu_window_handle);
             if let Some(menu_item) = find_by_id(submenu_data, id) {
                 return Some(menu_item);
             }
@@ -894,8 +907,8 @@ fn index_of_item(data: &mut MenuData, uuid: u16) -> Option<(&mut MenuData, usize
         }
 
         if item.menu_item_type == MenuItemType::Submenu {
-            let hwnd = item.submenu.as_ref().unwrap().hwnd;
-            let submenu_data = get_menu_data_mut(hwnd);
+            let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+            let submenu_data = get_menu_data_mut(submenu_window_handle);
             if let Some(index) = index_of_item(submenu_data, uuid) {
                 return Some(index);
             }
@@ -1056,7 +1069,7 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
 
     let text_2d_rect = to_2d_rect(&text_rect);
     let factory = create_write_factory();
-    let format = get_text_format(&factory, data.theme, &data.config, TextAlignment::Leading)?;
+    let format = get_text_format(&factory, data.current_theme, &data.config, TextAlignment::Leading)?;
 
     let color = if disabled {
         scheme.disabled
@@ -1171,7 +1184,8 @@ fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<
     Ok(())
 }
 
-fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoint {
+fn get_display_point(window_handle: isize, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoint {
+    let hwnd = HWND(window_handle);
     let mut rtl = false;
     let mut reverse = false;
 
@@ -1219,7 +1233,8 @@ fn get_display_point(hwnd: HWND, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoi
     }
 }
 
-fn change_selection(data: &mut MenuData, hwnd: HWND, screen_point: POINT) -> bool {
+fn change_selection(data: &mut MenuData, window_handle: isize, screen_point: POINT) -> bool {
+    let hwnd = HWND(window_handle);
     // Menu is yet to be visible due to timer or animation
     if unsafe { !IsWindowVisible(hwnd) }.as_bool() {
         return false;
@@ -1266,8 +1281,8 @@ fn toggle_submenu(data: &mut MenuData, selected_index: i32) -> bool {
     }
 
     if data.visible_submenu_index >= 0 && data.visible_submenu_index != selected_index {
-        let hwnd = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().hwnd;
-        animate_hide_submenu(hwnd);
+        let submenu_window_handle = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle;
+        animate_hide_submenu(submenu_window_handle);
         data.visible_submenu_index = -1;
     }
 
@@ -1293,12 +1308,12 @@ fn show_submenu(hwnd: HWND) {
 unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
     KillTimer(hwnd, id).unwrap();
 
-    let main_menu_data = get_menu_data(hwnd);
+    let main_menu_data = get_menu_data(hwnd.0);
 
     if main_menu_data.visible_submenu_index >= 0 {
         let item = &main_menu_data.items[main_menu_data.visible_submenu_index as usize];
-        let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
-        let submenu_data = get_menu_data(submenu_hwnd);
+        let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+        let submenu_data = get_menu_data(submenu_window_handle);
 
         // If submenu has no item, do not show submenu
         if submenu_data.items.is_empty() {
@@ -1308,7 +1323,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         let mut main_menu_rect = RECT::default();
         GetWindowRect(hwnd, &mut main_menu_rect).unwrap();
 
-        let pt = get_display_point(submenu_hwnd, main_menu_rect.right, main_menu_rect.top + item.top, submenu_data.width, submenu_data.height);
+        let pt = get_display_point(submenu_window_handle, main_menu_rect.right, main_menu_rect.top + item.top, submenu_data.width, submenu_data.height);
 
         let x = if pt.rtl {
             main_menu_rect.left - submenu_data.width - main_menu_data.config.size.submenu_offset
@@ -1334,19 +1349,22 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
             main_menu_rect.top + item.top - main_menu_data.config.size.vertical_padding - round_corner_size - main_menu_data.config.size.border_size
         };
 
+        let submenu_hwnd = HWND(submenu_window_handle);
         SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
-        animate_show_window(submenu_hwnd);
+        animate_show_window(submenu_window_handle);
     }
 }
 
-fn hide_submenu(hwnd: HWND) {
-    let data = get_menu_data_mut(hwnd);
+fn hide_submenu(window_handle: isize) {
+    let data = get_menu_data_mut(window_handle);
     data.selected_index = -1;
-    set_menu_data(hwnd, data);
+    set_menu_data(window_handle, data);
+    let hwnd = HWND(window_handle);
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 }
 
-fn animate_hide_submenu(hwnd: HWND) {
+fn animate_hide_submenu(window_handle: isize) {
+    let hwnd = HWND(window_handle);
     let proc: TIMERPROC = Some(delay_hide_submenu);
     let mut hide_delay: u32 = 0;
     let _ = unsafe { SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, Some(&mut hide_delay as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) };
@@ -1355,9 +1373,9 @@ fn animate_hide_submenu(hwnd: HWND) {
 
 unsafe extern "system" fn delay_hide_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
     KillTimer(hwnd, id).unwrap();
-    let data = get_menu_data_mut(hwnd);
+    let data = get_menu_data_mut(hwnd.0);
     data.selected_index = -1;
-    set_menu_data(hwnd, data);
+    set_menu_data(hwnd.0, data);
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 }
 
@@ -1408,9 +1426,9 @@ fn index_from_point(hwnd: HWND, screen_pt: POINT, data: &MenuData) -> i32 {
 }
 
 fn get_hwnd_from_point(hwnd: HWND) -> Option<HWND> {
-    let data = get_menu_data(hwnd);
+    let data = get_menu_data(hwnd.0);
     let submenu = if data.visible_submenu_index >= 0 {
-        data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().hwnd
+        HWND(data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle)
     } else {
         HWND(0)
     };
@@ -1430,13 +1448,13 @@ fn get_hwnd_from_point(hwnd: HWND) -> Option<HWND> {
     None
 }
 
-fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) {
-    let data = get_menu_data_mut(hwnd);
+fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) {
+    let data = get_menu_data_mut(window_handle);
     if data.menu_type == MenuType::Submenu {
         return;
     }
 
-    let current_them = data.theme;
+    let current_them = data.current_theme;
 
     // Don't respont to setting change event unless theme is System
     if current_them != Theme::System && factor == ThemeChangeFactor::SystemSetting {
@@ -1475,25 +1493,27 @@ fn on_theme_change(hwnd: HWND, maybe_preferred_theme: Option<Theme>, factor: The
         }
     };
 
-    data.theme = new_theme;
-    set_window_border_color(hwnd, data).unwrap();
-    set_menu_data(hwnd, data);
+    data.current_theme = new_theme;
+    set_window_border_color(window_handle, data).unwrap();
+    set_menu_data(window_handle, data);
+    let hwnd = HWND(window_handle);
     let _ = unsafe { UpdateWindow(hwnd) };
 
     for menu_item in &data.items {
         let item = menu_item;
         if item.menu_item_type == MenuItemType::Submenu {
-            let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
-            let submenu_data = get_menu_data_mut(submenu_hwnd);
-            submenu_data.theme = new_theme;
-            set_window_border_color(submenu_hwnd, data).unwrap();
-            set_menu_data(submenu_hwnd, submenu_data);
+            let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+            let submenu_hwnd = HWND(submenu_window_handle);
+            let submenu_data = get_menu_data_mut(submenu_window_handle);
+            submenu_data.current_theme = new_theme;
+            set_window_border_color(submenu_window_handle, data).unwrap();
+            set_menu_data(submenu_window_handle, submenu_data);
             let _ = unsafe { UpdateWindow(submenu_hwnd) };
         }
     }
 }
 
-fn create_menu_window(parent: HWND) -> Result<HWND, Error> {
+fn create_menu_window(parent: isize) -> Result<isize, Error> {
     let class_name = w!("WC_POPUP");
 
     let class = WNDCLASSEXW {
@@ -1517,10 +1537,10 @@ fn create_menu_window(parent: HWND) -> Result<HWND, Error> {
     let ex_style = WS_EX_TOOLWINDOW | WS_EX_LAYERED;
 
     let hwnd = unsafe {
-        CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, parent, None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
+        CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, HWND(parent), None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
     };
 
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
-    Ok(hwnd)
+    Ok(hwnd.0)
 }

@@ -42,10 +42,10 @@ pub(crate) struct MenuData {
     pub(crate) height: i32,
     pub(crate) button: Button,
     pub(crate) visible_submenu_index: i32,
-    pub(crate) theme: Theme,
+    pub(crate) current_theme: Theme,
     pub(crate) config: Config,
     pub(crate) thread_id: u32,
-    pub(crate) parent: HWND,
+    pub(crate) parent: isize,
     pub(crate) dc_render_target: ID2D1DCRenderTarget,
     pub(crate) check_svg: ID2D1SvgDocument,
     pub(crate) submenu_svg: ID2D1SvgDocument,
@@ -59,29 +59,33 @@ pub(crate) struct MenuData {
 pub struct MenuBuilder {
     pub(crate) menu: Menu,
     items: Vec<MenuItem>,
+    theme: Theme,
     config: Config,
     menu_type: MenuType,
 }
 
 impl MenuBuilder {
-    /// Creates a new Menu for the specified window.
-    pub fn new(parent: HWND) -> Self {
+    /// Creates a new Menu for the specified window(HWND).
+    pub fn new(window_handle: isize) -> Self {
         let mut menu = Menu::default();
-        menu.parent = parent;
-        menu.hwnd = menu.create_window(parent);
+        menu.parent_window_handle = window_handle;
+        menu.window_handle = menu.create_window(window_handle);
+        let config = Config::default();
+        let theme = config.theme;
         Self {
             menu,
             items: Vec::new(),
-            config: Config::default(),
+            config,
+            theme,
             menu_type: MenuType::Main,
         }
     }
 
-    /// Creates a new Menu with the specified Theme for the specified window.
-    pub fn new_with_theme(parent: HWND, theme: Theme) -> Self {
+    /// Creates a new Menu with the specified Theme for the specified window(HWND).
+    pub fn new_with_theme(window_handle: isize, theme: Theme) -> Self {
         let mut menu = Menu::default();
-        menu.parent = parent;
-        menu.hwnd = menu.create_window(parent);
+        menu.parent_window_handle = window_handle;
+        menu.window_handle = menu.create_window(window_handle);
         let config = Config {
             theme,
             ..Default::default()
@@ -90,16 +94,17 @@ impl MenuBuilder {
             menu,
             items: Vec::new(),
             config,
+            theme,
             menu_type: MenuType::Main,
         }
     }
 
-    /// Creates a new Menu using the specified Config for the specified window.
-    pub fn new_from_config(parent: HWND, config: Config) -> Self {
+    /// Creates a new Menu using the specified Config for the specified window(HWND).
+    pub fn new_from_config(window_handle: isize, config: Config) -> Self {
         let mut menu = Menu::default();
-        menu.parent = parent;
-        menu.hwnd = menu.create_window(parent);
-
+        menu.parent_window_handle = window_handle;
+        menu.window_handle = menu.create_window(window_handle);
+        let theme = config.theme;
         Self {
             menu,
             items: Vec::new(),
@@ -111,12 +116,13 @@ impl MenuBuilder {
                 },
                 ..config
             },
+            theme,
             menu_type: MenuType::Main,
         }
     }
 
     pub(crate) fn new_for_submenu(parent: &Menu) -> Self {
-        let data = get_menu_data(parent.hwnd);
+        let data = get_menu_data(parent.window_handle);
         let config = Config {
             corner: if !is_win11() && data.config.corner == Corner::Round {
                 Corner::DoNotRound
@@ -127,59 +133,59 @@ impl MenuBuilder {
         };
 
         let mut menu = Menu::default();
-        menu.parent = parent.hwnd;
-        menu.hwnd = menu.create_window(parent.hwnd);
+        menu.parent_window_handle = parent.window_handle;
+        menu.window_handle = menu.create_window(parent.window_handle);
 
         Self {
             menu,
             items: Vec::new(),
             config,
+            theme: data.current_theme,
             menu_type: MenuType::Submenu,
         }
     }
 
     /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_text_item(id, label, "", None, disabled);
-        item.hwnd = self.menu.hwnd;
+        let mut item = MenuItem::new_text_item(id, label, None, disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_text_item(id, label, "", Some(accelerator), disabled);
-        item.hwnd = self.menu.hwnd;
+        let mut item = MenuItem::new_text_item(id, label, Some(accelerator), disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     /// Adds a check MenuItem to Menu.
-    pub fn check(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_check_item(id, label, value, None, checked, disabled);
-        item.hwnd = self.menu.hwnd;
+    pub fn check(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>) -> &Self {
+        let mut item = MenuItem::new_check_item(id, label, None, checked, disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
-    pub fn check_with_accelerator(&mut self, id: &str, label: &str, value: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_check_item(id, label, value, Some(accelerator), checked, disabled);
-        item.hwnd = self.menu.hwnd;
+    pub fn check_with_accelerator(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
+        let mut item = MenuItem::new_check_item(id, label, Some(accelerator), checked, disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     /// Adds a radio MenuItem to Menu.
-    pub fn radio(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_radio_item(id, label, value, name, None, checked, disabled);
-        item.hwnd = self.menu.hwnd;
+    pub fn radio(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
+        let mut item = MenuItem::new_radio_item(id, label, name, None, checked, disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn radio_with_accelerator(&mut self, id: &str, label: &str, value: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_radio_item(id, label, value, name, Some(accelerator), checked, disabled);
-        item.hwnd = self.menu.hwnd;
+    pub fn radio_with_accelerator(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
+        let mut item = MenuItem::new_radio_item(id, label, name, Some(accelerator), checked, disabled);
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
@@ -187,15 +193,15 @@ impl MenuBuilder {
     /// Adds a separator to Menu.
     pub fn separator(&mut self) -> &Self {
         let mut item = MenuItem::new_separator();
-        item.hwnd = self.menu.hwnd;
+        item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, id: &str, label: &str, disabled: Option<bool>) -> Self {
-        let mut item = MenuItem::new(self.menu.hwnd, id, label, "", "", "", false, disabled, MenuItemType::Submenu, None);
-        let mut builder = Self::new_from_config(self.menu.hwnd, self.config.clone());
+        let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None);
+        let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
         builder.menu_type = MenuType::Submenu;
 
         // Set dummy menu to be replaced later
@@ -254,7 +260,7 @@ impl MenuBuilder {
             },
         };
 
-        let size = self.menu.calculate(&mut self.items, &self.config, self.config.theme, self.config.corner, button)?;
+        let size = self.menu.calculate(&mut self.items, &self.config, self.config.theme, button)?;
 
         if is_main_menu {
             Self::rebuild_submenu(&mut self, button);
@@ -277,13 +283,13 @@ impl MenuBuilder {
             button,
             selected_index: -1,
             visible_submenu_index: -1,
-            theme: self.config.theme,
+            current_theme: self.theme,
             config: self.config.clone(),
             thread_id: 0,
             parent: if is_main_menu {
-                HWND(0)
+                0
             } else {
-                self.menu.parent
+                self.menu.parent_window_handle
             },
             dc_render_target,
             check_svg: check_svg_doc.document,
@@ -294,15 +300,16 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
+        let hwnd = HWND(self.menu.window_handle);
         if is_win11() {
             if self.config.corner == Corner::Round {
-                unsafe { DwmSetWindowAttribute(self.menu.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
+                unsafe { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
             }
 
-            set_window_border_color(self.menu.hwnd, &data)?;
+            set_window_border_color(self.menu.window_handle, &data)?;
         }
 
-        unsafe { SetWindowLongPtrW(self.menu.hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
+        unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
         Ok(self.menu)
     }
@@ -312,7 +319,7 @@ impl MenuBuilder {
             if item.menu_item_type == MenuItemType::Submenu {
                 let mut submenu = item.submenu.as_ref().unwrap().clone();
                 submenu.menu_type = MenuType::Submenu;
-                let _ = submenu.calculate(&mut submenu.items(), &self.config, self.config.theme, self.config.corner, buttom);
+                let _ = submenu.calculate(&mut submenu.items(), &self.config, self.config.theme, buttom);
                 item.submenu = Some(submenu);
             }
         }
@@ -322,8 +329,8 @@ impl MenuBuilder {
     fn collect_accelerators(items: &Vec<MenuItem>, accelerators: &mut HashMap<u16, String>) {
         for item in items {
             if item.menu_item_type == MenuItemType::Submenu {
-                let submenu_hwnd = item.submenu.as_ref().unwrap().hwnd;
-                let data = get_menu_data(submenu_hwnd);
+                let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+                let data = get_menu_data(submenu_window_handle);
                 Self::collect_accelerators(&data.items, accelerators);
             } else if !item.accelerator.is_empty() {
                 accelerators.insert(item.uuid, item.accelerator.clone());
