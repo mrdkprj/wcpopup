@@ -21,6 +21,8 @@ When a MenuItem is clicked, SelectedMenuItem data is returned.
 ```rust
 fn example(window_handle: isize) {
     let mut builder = MenuBuilder::new(window_handle);
+    // Using HWND
+    // let mut builder = MenuBuilder::new_for_hwnd(hwnd);
 
     builder.check("menu_item1", "Fit To Window", true, None);
     builder.separator();
@@ -39,6 +41,10 @@ fn example(window_handle: isize) {
     let menu = builder.build().unwrap();
 
     let selected_item = menu.popup_at(100, 100);
+    // On a separate thread
+    // async_std::task::spawn(async move {
+    //   let selected_item = menu.popup_at_async(100, 100).await
+    // });
 }
 ```
 WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)).    
