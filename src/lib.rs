@@ -11,6 +11,8 @@
 //! ```no_run
 //! fn example(window_handle: isize) {
 //!   let mut builder = MenuBuilder::new(window_handle);
+//!   // Using HWND
+//!   // let mut builder = MenuBuilder::new_for_hwnd(hwnd);
 //!
 //!   builder.check("menu_item1", "Menu Label 1", true, None);
 //!   builder.separator();
@@ -29,8 +31,10 @@
 //!   let menu = builder.build().unwrap();
 //!
 //!   let selected_item = menu.popup_at(100, 100);
-//!   // Or popup_at_async
-//!   // let selected_item = menu.popup_at_async(100, 100).await
+//!   // On a separate thread
+//!   // async_std::task::spawn(async move {
+//!   //   let selected_item = menu.popup_at_async(100, 100).await
+//!   // });
 //! }
 //! ```
 mod accelerator;
@@ -169,8 +173,8 @@ impl Default for Menu {
 struct PopupInfo {
     menu_thread_id: u32,
     current_thread_id: u32,
-    keyboard_hook: HHOOK,
-    mouse_hook: HHOOK,
+    keyboard_hook: isize,
+    mouse_hook: isize,
 }
 
 impl Menu {
@@ -265,11 +269,11 @@ impl Menu {
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
         unsafe {
-            let hwnd = HWND(self.window_handle);
-            let parent_hwnd = HWND(self.parent_window_handle);
+            let hwnd = hw!(self.window_handle);
+            let parent_hwnd = hw!(self.parent_window_handle);
             let ancestor = GetAncestor(parent_hwnd, GA_ROOTOWNER);
             let _ = SetWindowSubclass(
-                if ancestor.0 == 0 {
+                if ancestor.0.is_null() {
                     parent_hwnd
                 } else {
                     ancestor
@@ -290,7 +294,7 @@ impl Menu {
         let window_handle = if self.menu_type == MenuType::Main {
             self.window_handle
         } else {
-            unsafe { GetParent(HWND(self.window_handle)).0 }
+            unsafe { GetParent(hw!(self.window_handle)).unwrap().0 as _ }
         };
 
         let data = get_menu_data_mut(window_handle);
@@ -378,8 +382,8 @@ impl Menu {
     }
 
     fn start_popup(&self, x: i32, y: i32, sync: bool) -> PopupInfo {
-        let hwnd = HWND(self.window_handle);
-        let parent = HWND(self.parent_window_handle);
+        let hwnd = hw!(self.window_handle);
+        let parent = hw!(self.parent_window_handle);
         let menu_thread_id = unsafe { GetWindowThreadProcessId(hwnd, None) };
         let current_thread_id = unsafe { GetCurrentThreadId() };
 
@@ -398,7 +402,7 @@ impl Menu {
         let _ = unsafe { SetWindowPos(hwnd, HWND_TOP, pt.x, pt.y, self.width, self.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
 
         // Set menu hwnd to property to be used in keyboard hook
-        unsafe { SetPropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr()), HANDLE(self.window_handle)).unwrap() };
+        unsafe { SetPropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr()), HANDLE(self.window_handle as _)).unwrap() };
 
         // Set hooks
         let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, menu_thread_id).unwrap() };
@@ -411,13 +415,13 @@ impl Menu {
             } else {
                 current_thread_id
             },
-            keyboard_hook,
-            mouse_hook,
+            keyboard_hook: vtoi!(keyboard_hook.0),
+            mouse_hook: vtoi!(mouse_hook.0),
         }
     }
 
     fn finish_popup(&self, info: PopupInfo) {
-        let hwnd = HWND(self.window_handle);
+        let hwnd = hw!(self.window_handle);
         let _ = unsafe { ReleaseCapture() };
 
         let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
@@ -425,8 +429,8 @@ impl Menu {
         let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
 
         // Unhook hooks
-        let _ = unsafe { UnhookWindowsHookEx(info.keyboard_hook) };
-        let _ = unsafe { UnhookWindowsHookEx(info.mouse_hook) };
+        let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as _)) };
+        let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.mouse_hook as _)) };
 
         if info.current_thread_id > 0 {
             let _ = unsafe { AttachThreadInput(info.current_thread_id, info.menu_thread_id, false) };
@@ -445,29 +449,26 @@ impl Menu {
         let mut msg = MSG::default();
         let mut selected_item: Option<MenuItem> = None;
 
-        async {
-            while unsafe { GetMessageW(&mut msg, None, 0, 0).as_bool() } {
-                match msg.message {
-                    WM_MENUSELECTED => {
-                        selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
-                        break;
-                    }
-
-                    #[cfg(feature = "accelerator")]
-                    WM_MENUCOMMAND => {
-                        selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
-                        break;
-                    }
-
-                    WM_CLOSEMENU => {
-                        break;
-                    }
-
-                    _ => {}
+        while unsafe { GetMessageW(&mut msg, None, 0, 0).as_bool() } {
+            match msg.message {
+                WM_MENUSELECTED => {
+                    selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
+                    break;
                 }
+
+                #[cfg(feature = "accelerator")]
+                WM_MENUCOMMAND => {
+                    selected_item = Some(unsafe { transmute::<isize, &MenuItem>(msg.lParam.0).clone() });
+                    break;
+                }
+
+                WM_CLOSEMENU => {
+                    break;
+                }
+
+                _ => {}
             }
         }
-        .await;
 
         Self::finish_popup(self, info);
 
@@ -517,13 +518,13 @@ impl Menu {
 }
 
 fn animate_show_window(window_handle: isize) {
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     let _ = unsafe { AnimateWindow(hwnd, FADE_EFFECT_TIME, AW_BLEND) };
     let _ = unsafe { ShowWindow(hwnd, SW_SHOWNOACTIVATE) };
 }
 
 fn set_capture(window_handle: isize) {
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     // Prevent mouse input on window beneath menu
     unsafe { SetCapture(hwnd) };
 
@@ -565,7 +566,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
     match msg {
         WM_INACTIVATE => {
             if IsWindowVisible(window).as_bool() {
-                let id = init_menu_data(window.0);
+                let id = init_menu_data(vtoi!(window.0));
                 post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
             }
 
@@ -574,7 +575,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         WM_DESTROY => {
             free_library();
-            let data = get_menu_data_mut(window.0);
+            let data = get_menu_data_mut(vtoi!(window.0));
             if data.menu_type == MenuType::Main {
                 let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
                 let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
@@ -593,21 +594,21 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_PRINTCLIENT => {
-            let hdc = HDC(wparam.0 as isize);
-            let data = get_menu_data(window.0);
+            let hdc = HDC(wparam.0 as _);
+            let data = get_menu_data(vtoi!(window.0));
             paint_background(window, data, Some(hdc));
             paint(hdc, data, &data.items).unwrap();
             LRESULT(1)
         }
 
         WM_ERASEBKGND => {
-            let data = get_menu_data(window.0);
+            let data = get_menu_data(vtoi!(window.0));
             paint_background(window, data, None);
             LRESULT(0)
         }
 
         WM_PAINT => {
-            let data = get_menu_data(window.0);
+            let data = get_menu_data(vtoi!(window.0));
             on_paint(window, data).unwrap();
             LRESULT(0)
         }
@@ -616,13 +617,13 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN);
 
             if should_close_menu {
-                let id = init_menu_data(window.0);
+                let id = init_menu_data(vtoi!(window.0));
                 post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
                 return LRESULT(0);
             }
 
             #[cfg(feature = "accelerator")]
-            let data = get_menu_data(window.0);
+            let data = get_menu_data(vtoi!(window.0));
             #[cfg(feature = "accelerator")]
             if let Some(accel) = &data.haccel {
                 let keydown_msg = MSG {
@@ -645,12 +646,12 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 return LRESULT(0);
             }
 
-            let data = get_menu_data_mut(window.0);
+            let data = get_menu_data_mut(vtoi!(window.0));
             let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
             if let Some((data, index)) = maybe_index {
                 if on_menu_item_selected(data, index) {
                     let menu_item = data.items[index].clone();
-                    let id = init_menu_data(window.0);
+                    let id = init_menu_data(vtoi!(window.0));
                     post_message(window, id, WM_MENUCOMMAND, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
                 }
             }
@@ -674,7 +675,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_MOUSEWHEEL => {
-            let id = init_menu_data(window.0);
+            let id = init_menu_data(vtoi!(window.0));
             post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
             LRESULT(0)
         }
@@ -683,7 +684,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let wide_string_ptr = lparam.0 as *const u16;
             let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or_default();
             if lparam_str == "ImmersiveColorSet" {
-                on_theme_change(window.0, None, ThemeChangeFactor::SystemSetting);
+                on_theme_change(vtoi!(window.0), None, ThemeChangeFactor::SystemSetting);
             }
 
             DefWindowProcW(window, msg, wparam, lparam)
@@ -696,7 +697,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 fn on_mouse_move(window: HWND) {
     let mut pt = POINT::default();
     let _ = unsafe { GetCursorPos(&mut pt) };
-    let data = get_menu_data_mut(window.0);
+    let data = get_menu_data_mut(vtoi!(window.0));
 
     if data.visible_submenu_index >= 0 {
         let submenu_window_handle = data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle;
@@ -705,8 +706,8 @@ fn on_mouse_move(window: HWND) {
         set_menu_data(submenu_window_handle, submenu_data);
     }
 
-    let should_show_submenu = change_selection(data, window.0, pt);
-    set_menu_data(window.0, data);
+    let should_show_submenu = change_selection(data, vtoi!(window.0), pt);
+    set_menu_data(vtoi!(window.0), data);
 
     // Show submenu after submenu index is stored
     if should_show_submenu {
@@ -721,7 +722,7 @@ fn on_mouse_down(window: HWND, msg: u32) {
         let _ = unsafe { ReleaseCapture() };
 
         // Close menu
-        let id = init_menu_data(window.0);
+        let id = init_menu_data(vtoi!(window.0));
         post_message(window, id, WM_CLOSEMENU, WPARAM(0), LPARAM(0));
 
         // If mouse input occurs on parent window, send mouse input
@@ -736,7 +737,7 @@ fn on_mouse_up(window: HWND) {
     }
 
     let hwnd = maybe_hwnd.unwrap();
-    let data = get_menu_data_mut(hwnd.0);
+    let data = get_menu_data_mut(vtoi!(hwnd.0));
     let index = index_from_point(hwnd, get_cursor_point(window), data);
 
     if index < 0 {
@@ -744,9 +745,9 @@ fn on_mouse_up(window: HWND) {
     }
 
     if on_menu_item_selected(data, index as usize) {
-        set_menu_data(hwnd.0, data);
+        set_menu_data(vtoi!(hwnd.0), data);
         let menu_item = data.items[index as usize].clone();
-        let id = init_menu_data(window.0);
+        let id = init_menu_data(vtoi!(window.0));
         post_message(hwnd, id, WM_MENUSELECTED, WPARAM(0), LPARAM(Box::into_raw(Box::new(menu_item)) as _));
     }
 }
@@ -784,13 +785,15 @@ fn on_menu_item_selected(data: &mut MenuData, index: usize) -> bool {
 }
 
 fn get_parent_window(child: HWND) -> HWND {
-    let owner = unsafe { GetWindow(child, GW_OWNER) };
-
-    if owner.0 != 0 {
+    if let Ok(owner) = unsafe { GetWindow(child, GW_OWNER) } {
         return owner;
     }
 
-    unsafe { GetParent(child) }
+    if let Ok(parent) = unsafe { GetParent(child) } {
+        return parent;
+    }
+
+    HWND(std::ptr::null_mut())
 }
 
 fn send_mouse_input(hwnd: HWND, msg: u32) {
@@ -800,7 +803,7 @@ fn send_mouse_input(hwnd: HWND, msg: u32) {
     let mut cursor_point = POINT::default();
     let _ = unsafe { GetCursorPos(&mut cursor_point) };
 
-    while parent.0 != 0 {
+    while !parent.0.is_null() {
         let mut rect = RECT::default();
         let _ = unsafe { GetWindowRect(parent, &mut rect) };
         if unsafe { PtInRect(&mut rect as *const _ as _, cursor_point) }.as_bool() {
@@ -850,7 +853,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
         WM_THEMECHANGED => {
             let hwnd_ptr = dwrefdata as *const HWND;
             let hwnd = unsafe { *hwnd_ptr };
-            on_theme_change(hwnd.0, None, ThemeChangeFactor::App);
+            on_theme_change(vtoi!(hwnd.0), None, ThemeChangeFactor::App);
             DefSubclassProc(window, msg, wparam, lparam)
         }
 
@@ -924,7 +927,7 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         unsafe { GetWindowDC(hwnd) }
     };
 
-    if dc.0 == 0 {
+    if dc.0.is_null() {
         return;
     }
 
@@ -975,7 +978,7 @@ fn on_paint(hwnd: HWND, data: &MenuData) -> Result<(), Error> {
     let mut paint_struct = PAINTSTRUCT::default();
     let dc = unsafe { BeginPaint(hwnd, &mut paint_struct) };
 
-    if dc.0 == 0 {
+    if dc.0.is_null() {
         return Ok(());
     }
 
@@ -1185,7 +1188,7 @@ fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<
 }
 
 fn get_display_point(window_handle: isize, x: i32, y: i32, cx: i32, cy: i32) -> DisplayPoint {
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     let mut rtl = false;
     let mut reverse = false;
 
@@ -1196,7 +1199,7 @@ fn get_display_point(window_handle: isize, x: i32, y: i32, cx: i32, cy: i32) -> 
 
     let mut hmon = unsafe { MonitorFromPoint(ppt, MONITOR_DEFAULTTONULL) };
 
-    if hmon.0 == 0 {
+    if hmon.0.is_null() {
         hmon = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
     }
 
@@ -1234,7 +1237,7 @@ fn get_display_point(window_handle: isize, x: i32, y: i32, cx: i32, cy: i32) -> 
 }
 
 fn change_selection(data: &mut MenuData, window_handle: isize, screen_point: POINT) -> bool {
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     // Menu is yet to be visible due to timer or animation
     if unsafe { !IsWindowVisible(hwnd) }.as_bool() {
         return false;
@@ -1308,7 +1311,7 @@ fn show_submenu(hwnd: HWND) {
 unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
     KillTimer(hwnd, id).unwrap();
 
-    let main_menu_data = get_menu_data(hwnd.0);
+    let main_menu_data = get_menu_data(vtoi!(hwnd.0));
 
     if main_menu_data.visible_submenu_index >= 0 {
         let item = &main_menu_data.items[main_menu_data.visible_submenu_index as usize];
@@ -1349,7 +1352,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
             main_menu_rect.top + item.top - main_menu_data.config.size.vertical_padding - round_corner_size - main_menu_data.config.size.border_size
         };
 
-        let submenu_hwnd = HWND(submenu_window_handle);
+        let submenu_hwnd = hw!(submenu_window_handle);
         SetWindowPos(submenu_hwnd, HWND_TOP, x, y, submenu_data.width, submenu_data.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
         animate_show_window(submenu_window_handle);
     }
@@ -1359,12 +1362,12 @@ fn hide_submenu(window_handle: isize) {
     let data = get_menu_data_mut(window_handle);
     data.selected_index = -1;
     set_menu_data(window_handle, data);
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 }
 
 fn animate_hide_submenu(window_handle: isize) {
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     let proc: TIMERPROC = Some(delay_hide_submenu);
     let mut hide_delay: u32 = 0;
     let _ = unsafe { SystemParametersInfoW(SPI_GETMENUSHOWDELAY, 0, Some(&mut hide_delay as *mut _ as *mut c_void), SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0)) };
@@ -1373,9 +1376,9 @@ fn animate_hide_submenu(window_handle: isize) {
 
 unsafe extern "system" fn delay_hide_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
     KillTimer(hwnd, id).unwrap();
-    let data = get_menu_data_mut(hwnd.0);
+    let data = get_menu_data_mut(vtoi!(hwnd.0));
     data.selected_index = -1;
-    set_menu_data(hwnd.0, data);
+    set_menu_data(vtoi!(hwnd.0), data);
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 }
 
@@ -1426,18 +1429,18 @@ fn index_from_point(hwnd: HWND, screen_pt: POINT, data: &MenuData) -> i32 {
 }
 
 fn get_hwnd_from_point(hwnd: HWND) -> Option<HWND> {
-    let data = get_menu_data(hwnd.0);
+    let data = get_menu_data(vtoi!(hwnd.0));
     let submenu = if data.visible_submenu_index >= 0 {
-        HWND(data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle)
+        hw!(data.items[data.visible_submenu_index as usize].submenu.as_ref().unwrap().window_handle)
     } else {
-        HWND(0)
+        HWND(std::ptr::null_mut())
     };
 
     let pt = get_cursor_point(hwnd);
 
     let window = unsafe { WindowFromPoint(pt) };
 
-    if submenu.0 != 0 && window == submenu {
+    if !submenu.0.is_null() && window == submenu {
         return Some(submenu);
     }
 
@@ -1496,14 +1499,14 @@ fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, f
     data.current_theme = new_theme;
     set_window_border_color(window_handle, data).unwrap();
     set_menu_data(window_handle, data);
-    let hwnd = HWND(window_handle);
+    let hwnd = hw!(window_handle);
     let _ = unsafe { UpdateWindow(hwnd) };
 
     for menu_item in &data.items {
         let item = menu_item;
         if item.menu_item_type == MenuItemType::Submenu {
             let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
-            let submenu_hwnd = HWND(submenu_window_handle);
+            let submenu_hwnd = hw!(submenu_window_handle);
             let submenu_data = get_menu_data_mut(submenu_window_handle);
             submenu_data.current_theme = new_theme;
             set_window_border_color(submenu_window_handle, data).unwrap();
@@ -1537,10 +1540,11 @@ fn create_menu_window(parent: isize) -> Result<isize, Error> {
     let ex_style = WS_EX_TOOLWINDOW | WS_EX_LAYERED;
 
     let hwnd = unsafe {
-        CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, HWND(parent), None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
+        CreateWindowExW(ex_style, PCWSTR::from_raw(class_name.as_ptr()), PCWSTR::null(), window_styles, 0, 0, 0, 0, hw!(parent), None, GetModuleHandleW(PCWSTR::null()).unwrap_or_default(), None)
+            .unwrap()
     };
 
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
-    Ok(hwnd.0)
+    Ok(vtoi!(hwnd.0))
 }

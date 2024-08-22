@@ -20,22 +20,36 @@ use windows::{
     UI::ViewManagement::{UIColorType, UISettings},
 };
 
-static HUXTHEME: Lazy<HMODULE> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default() });
+static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 
-pub(crate) fn get_menu_data<'a>(hwnd: isize) -> &'a MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(HWND(hwnd), GWL_USERDATA) };
+#[macro_export]
+macro_rules! hw {
+    ($expression:expr) => {
+        HWND($expression as isize as *mut c_void)
+    };
+}
+
+#[macro_export]
+macro_rules! vtoi {
+    ($expression:expr) => {
+        $expression as *mut c_void as isize
+    };
+}
+
+pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
+    let userdata = unsafe { GetWindowLongPtrW(hw!(window_handle), GWL_USERDATA) };
     let item_data_ptr = userdata as *const MenuData;
     unsafe { &*item_data_ptr }
 }
 
-pub(crate) fn get_menu_data_mut<'a>(hwnd: isize) -> &'a mut MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(HWND(hwnd), GWL_USERDATA) };
+pub(crate) fn get_menu_data_mut<'a>(window_handle: isize) -> &'a mut MenuData {
+    let userdata = unsafe { GetWindowLongPtrW(hw!(window_handle), GWL_USERDATA) };
     let item_data_ptr = userdata as *mut MenuData;
     unsafe { &mut *item_data_ptr }
 }
 
-pub(crate) fn set_menu_data(hwnd: isize, data: &mut MenuData) {
-    unsafe { SetWindowLongPtrW(HWND(hwnd), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
+pub(crate) fn set_menu_data(window_handle: isize, data: &mut MenuData) {
+    unsafe { SetWindowLongPtrW(hw!(window_handle), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -152,12 +166,12 @@ pub(crate) fn is_win11() -> bool {
 }
 
 pub(crate) fn free_library() {
-    let _ = unsafe { FreeLibrary(*HUXTHEME) };
+    let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
 }
 
 pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {
     if is_win11() {
-        let hwnd = HWND(window_handle);
+        let hwnd = hw!(window_handle);
         if data.config.size.border_size > 0 {
             unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
         } else {
@@ -172,11 +186,11 @@ pub(crate) fn should_apps_use_dark_mode() -> bool {
     const UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL: u16 = 132;
     type ShouldAppsUseDarkMode = unsafe extern "system" fn() -> bool;
     static SHOULD_APPS_USE_DARK_MODE: Lazy<Option<ShouldAppsUseDarkMode>> = Lazy::new(|| unsafe {
-        if HUXTHEME.is_invalid() {
+        if HMODULE(*HUXTHEME as _).is_invalid() {
             return None;
         }
 
-        GetProcAddress(*HUXTHEME, PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| transmute(handle))
+        GetProcAddress(HMODULE(*HUXTHEME as _), PCSTR::from_raw(UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL as usize as *mut _)).map(|handle| transmute(handle))
     });
 
     SHOULD_APPS_USE_DARK_MODE.map(|should_apps_use_dark_mode| unsafe { (should_apps_use_dark_mode)() }).unwrap_or(false)

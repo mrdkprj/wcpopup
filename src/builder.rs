@@ -2,7 +2,7 @@
 use crate::accelerator::create_haccel;
 use crate::{
     direct2d::{create_check_svg, create_render_target, create_submenu_svg},
-    get_menu_data, is_win11, set_window_border_color, Button, ButtonSize, Config, Corner, Menu, MenuItem, MenuItemType, MenuType, Theme,
+    get_menu_data, hw, is_win11, set_window_border_color, Button, ButtonSize, Config, Corner, Menu, MenuItem, MenuItemType, MenuType, Theme,
 };
 #[cfg(feature = "accelerator")]
 use std::collections::HashMap;
@@ -65,8 +65,18 @@ pub struct MenuBuilder {
 }
 
 impl MenuBuilder {
-    /// Creates a new Menu for the specified window(HWND).
+    /// Creates a new Menu for the specified window handle.
     pub fn new(window_handle: isize) -> Self {
+        Self::new_builder(window_handle)
+    }
+
+    /// Creates a new Menu for the specified HWND.
+    pub fn new_for_hwnd(hwnd: HWND) -> Self {
+        let window_handle = hwnd.0 as isize;
+        Self::new_builder(window_handle)
+    }
+
+    fn new_builder(window_handle: isize) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -81,8 +91,18 @@ impl MenuBuilder {
         }
     }
 
-    /// Creates a new Menu with the specified Theme for the specified window(HWND).
+    /// Creates a new Menu with the specified Theme for the specified window handle.
     pub fn new_with_theme(window_handle: isize, theme: Theme) -> Self {
+        Self::new_builder_with_theme(window_handle, theme)
+    }
+
+    /// Creates a new Menu with the specified Theme for the specified HWND.
+    pub fn new_for_hwnd_with_theme(hwnd: HWND, theme: Theme) -> Self {
+        let window_handle = hwnd.0 as isize;
+        Self::new_builder_with_theme(window_handle, theme)
+    }
+
+    fn new_builder_with_theme(window_handle: isize, theme: Theme) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -99,8 +119,18 @@ impl MenuBuilder {
         }
     }
 
-    /// Creates a new Menu using the specified Config for the specified window(HWND).
+    /// Creates a new Menu using the specified Config for the specified window handle.
     pub fn new_from_config(window_handle: isize, config: Config) -> Self {
+        Self::new_builder_from_config(window_handle, config)
+    }
+
+    /// Creates a new Menu using the specified Config for the specified HWND.
+    pub fn new_for_hwnd_from_config(hwnd: HWND, config: Config) -> Self {
+        let window_handle = hwnd.0 as isize;
+        Self::new_builder_from_config(window_handle, config)
+    }
+
+    fn new_builder_from_config(window_handle: isize, config: Config) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -300,7 +330,7 @@ impl MenuBuilder {
             self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
         }
 
-        let hwnd = HWND(self.menu.window_handle);
+        let hwnd = hw!(self.menu.window_handle);
         if is_win11() {
             if self.config.corner == Corner::Round {
                 unsafe { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
