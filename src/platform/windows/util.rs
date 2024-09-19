@@ -1,4 +1,4 @@
-use crate::{direct2d::get_text_metrics, Button, ColorScheme, Config, MenuData, MenuItem, MenuItemType, Theme};
+use super::{direct2d::get_text_metrics, Button, ColorScheme, Config, MenuData, MenuItem, MenuItemType, Theme};
 use once_cell::sync::Lazy;
 use std::{
     ffi::c_void,
@@ -22,19 +22,19 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 
-#[macro_export]
 macro_rules! hw {
     ($expression:expr) => {
         HWND($expression as isize as *mut c_void)
     };
 }
+pub(crate) use hw;
 
-#[macro_export]
 macro_rules! vtoi {
     ($expression:expr) => {
         $expression as *mut c_void as isize
     };
 }
+pub(crate) use vtoi;
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
     let userdata = unsafe { GetWindowLongPtrW(hw!(window_handle), GWL_USERDATA) };
@@ -154,10 +154,6 @@ pub(crate) fn get_color_scheme(data: &MenuData) -> &ColorScheme {
     } else {
         &data.config.color.light
     }
-}
-
-pub(crate) fn to_hex_string(color: u32) -> String {
-    format!("#{:06x}", color & 0xFFFFFF)
 }
 
 pub(crate) fn is_win11() -> bool {

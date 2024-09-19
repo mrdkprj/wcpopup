@@ -1,4 +1,4 @@
-use crate::{get_current_theme, to_hex_string, to_pcwstr, Config, FontWeight, MenuFont, Theme};
+use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, MenuFont, Theme};
 use windows::{
     core::{w, Error, Interface},
     Win32::{
@@ -242,15 +242,12 @@ pub(crate) fn to_2d_rect(rect: &RECT) -> D2D_RECT_F {
     }
 }
 
-pub(crate) fn colorref_to_d2d1_color_f(colorref: u32) -> D2D1_COLOR_F {
-    let r = ((colorref & 0xFF) as f32) / 255.0;
-    let g = (((colorref >> 8) & 0xFF) as f32) / 255.0;
-    let b = (((colorref >> 16) & 0xFF) as f32) / 255.0;
-
+pub(crate) fn colorref_to_d2d1_color_f(color: u32) -> D2D1_COLOR_F {
+    let rgba = rgba_from_hex(color);
     D2D1_COLOR_F {
-        r,
-        g,
-        b,
-        a: 1.0,
+        r: (rgba.r as f32) / 255.0,
+        g: (rgba.g as f32) / 255.0,
+        b: (rgba.b as f32) / 255.0,
+        a: rgba.a,
     }
 }

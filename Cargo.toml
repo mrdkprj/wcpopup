@@ -6,6 +6,10 @@ description = "Context menu for Windows"
 documentation = "https://docs.rs/wcpopup/0.2.3/wcpopup/"
 readme = "README.md"
 categories = ["gui"]
+keywords = [
+    "context",
+    "menu",
+]
 license = "MIT"
 repository = "https://github.com/mrdkprj/wcpopup"
 exclude = [
@@ -17,17 +21,24 @@ default = []
 "accelerator" = []
 
 [package.metadata.docs.rs]
-default-target = "x86_64-pc-windows-msvc"
 targets = [
-  "x86_64-pc-windows-msvc"
+  "x86_64-pc-windows-msvc",
+  "x86_64-unknown-linux-gnu"
 ]
+
+[lib]
+name = "wcpopup"
+path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 once_cell = "1.19.0"
-windows-version = "0.1.1"
+async-std = "1.13.0"
 
-[dependencies.windows]
+[target.'cfg(target_os = "windows")'.dependencies.windows-version]
+version = "0.1.1"
+
+[target.'cfg(target_os = "windows")'.dependencies.windows]
 version = "0.58"
 features = [
   "Foundation",
@@ -49,6 +60,9 @@ features = [
   "Win32_Graphics_DirectWrite",
   "Foundation_Numerics",
 ]
+
+[target.'cfg(target_os = "linux")'.dependencies.gtk]
+version = "0.18.0"
 
 [profile.release]
 opt-level = "s"

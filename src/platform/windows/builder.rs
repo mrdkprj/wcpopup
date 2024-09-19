@@ -1,9 +1,13 @@
 #[cfg(feature = "accelerator")]
-use crate::accelerator::create_haccel;
-use crate::{
+use super::accelerator::create_haccel;
+use super::{
+    calculate,
     direct2d::{create_check_svg, create_render_target, create_submenu_svg},
-    get_menu_data, hw, is_win11, set_window_border_color, Button, ButtonSize, Config, Corner, Menu, MenuItem, MenuItemType, MenuType, Theme,
+    get_menu_data, hw, is_win11,
+    menu_item::MenuItem,
+    set_window_border_color, Button, ButtonSize, Config, Corner, Menu, PopupInfo, Size, Theme,
 };
+use crate::{MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
 use std::collections::HashMap;
 #[cfg(feature = "accelerator")]
@@ -34,17 +38,16 @@ const ARROW_BUTTON_MARGIN: i32 = 5;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MenuData {
+    pub(crate) popup_info: Option<PopupInfo>,
     pub(crate) menu_type: MenuType,
     pub(crate) items: Vec<MenuItem>,
     pub(crate) win_subclass_id: Option<u32>,
     pub(crate) selected_index: i32,
-    pub(crate) width: i32,
-    pub(crate) height: i32,
+    pub(crate) size: Size,
     pub(crate) button: Button,
     pub(crate) visible_submenu_index: i32,
     pub(crate) current_theme: Theme,
     pub(crate) config: Config,
-    pub(crate) thread_id: u32,
     pub(crate) parent: isize,
     pub(crate) dc_render_target: ID2D1DCRenderTarget,
     pub(crate) check_svg: ID2D1SvgDocument,
@@ -151,30 +154,6 @@ impl MenuBuilder {
         }
     }
 
-    pub(crate) fn new_for_submenu(parent: &Menu) -> Self {
-        let data = get_menu_data(parent.window_handle);
-        let config = Config {
-            corner: if !is_win11() && data.config.corner == Corner::Round {
-                Corner::DoNotRound
-            } else {
-                data.config.corner
-            },
-            ..data.config.clone()
-        };
-
-        let mut menu = Menu::default();
-        menu.parent_window_handle = parent.window_handle;
-        menu.window_handle = menu.create_window(parent.window_handle);
-
-        Self {
-            menu,
-            items: Vec::new(),
-            config,
-            theme: data.current_theme,
-            menu_type: MenuType::Submenu,
-        }
-    }
-
     /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
         let mut item = MenuItem::new_text_item(id, label, None, disabled);
@@ -241,9 +220,41 @@ impl MenuBuilder {
         builder
     }
 
+    pub(crate) fn new_for_submenu(parent: &Menu, items: &mut [MenuItem]) -> Self {
+        let data = get_menu_data(parent.window_handle);
+        let config = Config {
+            corner: if !is_win11() && data.config.corner == Corner::Round {
+                Corner::DoNotRound
+            } else {
+                data.config.corner
+            },
+            ..data.config.clone()
+        };
+
+        let mut menu = Menu::default();
+        menu.parent_window_handle = parent.window_handle;
+        menu.window_handle = menu.create_window(parent.window_handle);
+
+        let items: Vec<MenuItem> = items
+            .iter_mut()
+            .map(|item| {
+                item.menu_window_handle = menu.window_handle;
+                item.clone()
+            })
+            .collect();
+
+        Self {
+            menu,
+            items,
+            config,
+            theme: data.current_theme,
+            menu_type: MenuType::Submenu,
+        }
+    }
+
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
-    pub fn build(mut self) -> Result<Menu, Error> {
+    pub fn build(&mut self) -> Result<Menu, Error> {
         let is_main_menu = self.menu_type == MenuType::Main;
 
         #[cfg(feature = "accelerator")]
@@ -252,7 +263,7 @@ impl MenuBuilder {
         let mut haccel = None;
         #[cfg(feature = "accelerator")]
         if is_main_menu {
-            Self::collect_accelerators(&self.items, &mut accelerators);
+            collect_accelerators(&self.items, &mut accelerators);
             if !accelerators.is_empty() {
                 match create_haccel(&accelerators) {
                     Some(accel) => haccel = Some(Rc::new(accel)),
@@ -290,10 +301,10 @@ impl MenuBuilder {
             },
         };
 
-        let size = self.menu.calculate(&mut self.items, &self.config, self.config.theme, button)?;
+        let size = calculate(&mut self.items, &self.config, self.config.theme, button)?;
 
         if is_main_menu {
-            Self::rebuild_submenu(&mut self, button);
+            self.rebuild_submenu(button);
         }
 
         let data = MenuData {
@@ -308,14 +319,12 @@ impl MenuBuilder {
             haccel,
             #[cfg(feature = "accelerator")]
             accelerators,
-            height: size.height,
-            width: size.width,
+            size,
             button,
             selected_index: -1,
             visible_submenu_index: -1,
             current_theme: self.theme,
             config: self.config.clone(),
-            thread_id: 0,
             parent: if is_main_menu {
                 0
             } else {
@@ -324,6 +333,7 @@ impl MenuBuilder {
             dc_render_target,
             check_svg: check_svg_doc.document,
             submenu_svg: submenu_svg_doc.document,
+            popup_info: None,
         };
 
         if is_main_menu {
@@ -341,7 +351,7 @@ impl MenuBuilder {
 
         unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
 
-        Ok(self.menu)
+        Ok(self.menu.clone())
     }
 
     fn rebuild_submenu(&mut self, buttom: Button) {
@@ -349,22 +359,22 @@ impl MenuBuilder {
             if item.menu_item_type == MenuItemType::Submenu {
                 let mut submenu = item.submenu.as_ref().unwrap().clone();
                 submenu.menu_type = MenuType::Submenu;
-                let _ = submenu.calculate(&mut submenu.items(), &self.config, self.config.theme, buttom);
+                let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, buttom);
                 item.submenu = Some(submenu);
             }
         }
     }
+}
 
-    #[cfg(feature = "accelerator")]
-    fn collect_accelerators(items: &Vec<MenuItem>, accelerators: &mut HashMap<u16, String>) {
-        for item in items {
-            if item.menu_item_type == MenuItemType::Submenu {
-                let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
-                let data = get_menu_data(submenu_window_handle);
-                Self::collect_accelerators(&data.items, accelerators);
-            } else if !item.accelerator.is_empty() {
-                accelerators.insert(item.uuid, item.accelerator.clone());
-            }
+#[cfg(feature = "accelerator")]
+fn collect_accelerators(items: &Vec<MenuItem>, accelerators: &mut HashMap<u16, String>) {
+    for item in items {
+        if item.menu_item_type == MenuItemType::Submenu {
+            let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
+            let data = get_menu_data(submenu_window_handle);
+            collect_accelerators(&data.items, accelerators);
+        } else if !item.accelerator.is_empty() {
+            accelerators.insert(item.uuid, item.accelerator.clone());
         }
     }
 }

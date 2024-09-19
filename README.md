@@ -1,5 +1,5 @@
 # wcpopup
-Rust context/popup menu for Windows.  
+Rust context menu for Windows and Linux(Gtk3).  
 Supports dark/light theme and color/size configuration. 
 - Colors
     - Text color
@@ -15,14 +15,15 @@ Supports dark/light theme and color/size configuration.
 ![sample](https://github.com/mrdkprj/rpopup/blob/main/assets/light.jpg?raw=true)![sample](https://github.com/mrdkprj/rpopup/blob/main/assets/dark.jpg?raw=true)  
 
 # Usage
-Use ManuBuilder to create a Menu with MenuItems, and then call Menu.popup_at() to show Menu.  
-When a MenuItem is clicked, SelectedMenuItem data is returned.
+Use ManuBuilder to create a Menu with MenuItems.  
 
 ```rust
 fn example(window_handle: isize) {
     let mut builder = MenuBuilder::new(window_handle);
     // Using HWND
     // let mut builder = MenuBuilder::new_for_hwnd(hwnd);
+    // Using gtk::ApplicationWindow
+    // let mut builder = MenuBuilder::new_for_window(window);
 
     builder.check("menu_item1", "Fit To Window", true, None);
     builder.separator();
@@ -40,18 +41,39 @@ fn example(window_handle: isize) {
 
     let menu = builder.build().unwrap();
 
-    let selected_item = menu.popup_at(100, 100);
-    // On a separate thread
-    // async_std::task::spawn(async move {
-    //   let selected_item = menu.popup_at_async(100, 100).await
-    // });
 }
 ```
+
+Call Menu.popup_at() to show Menu and receive the selected MenuItem using MenuEvent.
+```rust
+fn show_context_menu(x:i32, y:i32) {
+    menu.popup_at(x, y);
+}
+
+if let Ok(event) = MenuEvent::receiver().try_recv() {
+    let selected_menu_item = event.item;    
+}
+```
+
+Or call Menu.popup_at_async() to show Menu and wait asynchronously for a selected MenuItem.
+```rust
+async fn show_context_menu(x:i32, y:i32) {
+    let selected_menu_item = menu.popup_at(x, y).await;
+}
+```
+
+
+
+## Platform-specific notes
+### Windows
 WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)).    
 Using WebView2, you may need to enable the feature flag.
 ```
 --enable-features=msWebView2BrowserHitTransparent
 ```
+
+### Linux
+Gtk3 is required.
 
 ## Accelerator
 Accelerators are used only to display available shortcut keys by default.  

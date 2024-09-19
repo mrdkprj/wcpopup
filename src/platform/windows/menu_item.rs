@@ -1,24 +1,16 @@
-use crate::{
-    builder::MenuBuilder,
+use super::{
+    recalculate,
     util::{get_menu_data_mut, set_menu_data, toggle_radio},
     Menu,
 };
-use serde::Serialize;
+use crate::MenuItemType;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU16, Ordering};
 
 static UUID: AtomicU16 = AtomicU16::new(0);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub enum MenuItemType {
-    Text,
-    Checkbox,
-    Radio,
-    Submenu,
-    Separator,
-}
-
 /// Menu item.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MenuItem {
     pub id: String,
     pub label: String,
@@ -35,6 +27,7 @@ pub struct MenuItem {
     pub(crate) top: i32,
     pub(crate) right: i32,
     pub(crate) bottom: i32,
+    pub(crate) items: Option<Vec<MenuItem>>,
 }
 
 impl MenuItem {
@@ -56,18 +49,22 @@ impl MenuItem {
             bottom: 0,
             checked,
             disabled: disabled.unwrap_or(false),
+            items: None,
         }
     }
 
-    pub fn set_disabled(&self, disabled: bool) {
+    pub fn set_disabled(&mut self, disabled: bool) {
+        self.disabled = disabled;
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].disabled = disabled;
         set_menu_data(self.menu_window_handle, data);
     }
 
-    pub fn set_label(&self, label: &str) {
+    pub fn set_label(&mut self, label: &str) {
+        self.label = label.to_string();
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].label = label.to_string();
+        recalculate(data);
         set_menu_data(self.menu_window_handle, data);
     }
 }
@@ -90,6 +87,7 @@ impl MenuItem {
             bottom: 0,
             checked: false,
             disabled: disabled.unwrap_or(false),
+            items: None,
         }
     }
 }
@@ -112,6 +110,7 @@ impl MenuItem {
             bottom: 0,
             checked,
             disabled: disabled.unwrap_or(false),
+            items: None,
         }
     }
 
@@ -132,10 +131,12 @@ impl MenuItem {
             bottom: 0,
             checked,
             disabled: disabled.unwrap_or(false),
+            items: None,
         }
     }
 
-    pub fn set_checked(&self, checked: bool) {
+    pub fn set_checked(&mut self, checked: bool) {
+        self.checked = checked;
         let data = get_menu_data_mut(self.menu_window_handle);
         let index = self.index as usize;
         if data.items[index].menu_item_type == MenuItemType::Checkbox {
@@ -148,24 +149,17 @@ impl MenuItem {
     }
 }
 
-/// Builder to create Submenu Item.
-pub struct SubmenuItemBuilder {
-    pub item: MenuItem,
-    pub builder: MenuBuilder,
-}
-
 impl MenuItem {
-    pub fn new_submenu_item(menu: &Menu, id: &str, label: &str, disabled: Option<bool>) -> SubmenuItemBuilder {
-        let mut item = MenuItem::new(menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None);
-        // Create builder
-        let builder = MenuBuilder::new_for_submenu(menu);
-        // Set dummy menu to be replaced later
-        item.submenu = Some(builder.menu.clone());
-
-        SubmenuItemBuilder {
-            item,
-            builder,
+    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>) -> Self {
+        let mut item = MenuItem::new(0, id, label, "", "", false, disabled, MenuItemType::Submenu, None);
+        item.items = Some(Vec::new());
+        item
+    }
+    pub fn add_menu_item(&mut self, item: MenuItem) -> &Self {
+        if let Some(items) = self.items.as_mut() {
+            items.push(item);
         }
+        self
     }
 }
 
@@ -187,6 +181,7 @@ impl MenuItem {
             bottom: 0,
             checked: false,
             disabled: false,
+            items: None,
         }
     }
 }
