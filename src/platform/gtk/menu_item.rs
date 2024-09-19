@@ -249,7 +249,7 @@ pub(crate) fn create_gtk_menu_item(
     let widget_name = get_widget_name(config.theme);
     gtk_menu_item.set_widget_name(widget_name);
 
-    let css = get_menu_item_css(&config);
+    let css = get_menu_item_css(config);
     let css_provider = CssProvider::new();
     css_provider.load_from_data(css.as_bytes()).unwrap();
     let provider = css_provider.dynamic_cast::<StyleProvider>().unwrap();

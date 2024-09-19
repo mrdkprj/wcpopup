@@ -1,4 +1,4 @@
-use crate::{platform::platform_impl::to_font_weight, util::to_rgba_string, Corner};
+use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner};
 
 use super::{Config, Theme};
 

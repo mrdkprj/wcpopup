@@ -223,7 +223,7 @@ impl MenuBuilder {
         let data = MenuData {
             gtk_menu_handle: from_menu(&gtk_menu),
             config: self.config.clone(),
-            accel_group_handle: accel_group_handle,
+            accel_group_handle,
         };
 
         unsafe { gtk_menu.set_data("data", data) };

@@ -63,7 +63,7 @@ impl Menu {
         let (parent_gtk_menu_handle, gtk_window_handle, menu_type) = match parent {
             Container::ApplicationWindow(app_window) => {
                 gtk_menu.set_attach_widget(Some(app_window));
-                let gtk_window_handle = from_app_window(&app_window);
+                let gtk_window_handle = from_app_window(app_window);
                 let gtk_menu_handle = from_menu(&gtk_menu);
 
                 if let Some(settings) = app_window.settings() {
@@ -181,7 +181,7 @@ impl Menu {
     }
 
     fn create_submenu(&mut self, item: &mut MenuItem, config: &Config) -> gtk::MenuItem {
-        let mut builder = MenuBuilder::new_for_submenu(&self, &item, config);
+        let mut builder = MenuBuilder::new_for_submenu(self, item, config);
         let submenu = builder.build().unwrap();
         let gtk_menu = create_gtk_menu_item(item, Some(&builder.gtk_submenu), None, config);
         item.submenu = Some(submenu);
@@ -189,13 +189,7 @@ impl Menu {
     }
 
     fn find_first_radio(&self, name: &str) -> Option<MenuItem> {
-        let items = self.items();
-        for item in items {
-            if item.name == name.to_string() {
-                return Some(item);
-            }
-        }
-        None
+        self.items().iter().find(|item| item.name == *name).cloned()
     }
 
     /// Removes the MenuItem at the specified index.
@@ -294,12 +288,8 @@ impl Menu {
         // Wait 50 ms for "activate" event.
         // Click "activate" occurs after automatic menu "hide", so event can have menu item.
         // Keypress "activate" occurs before menu "hide", so event is none that should be dismissed.
-        if let Ok(result) = timeout(Duration::from_millis(50), MenuEvent::innner_receiver().recv()).await {
-            if let Ok(event) = result {
-                if event.item.is_some() {
-                    item = event.item;
-                }
-            }
+        if let Ok(Ok(event)) = timeout(Duration::from_millis(50), MenuEvent::innner_receiver().recv()).await {
+            item = event.item;
         }
 
         item
@@ -324,7 +314,7 @@ fn find_by_id(items: &Vec<Widget>, id: &str) -> Option<MenuItem> {
     None
 }
 
-fn index_of_item(items: &Vec<Widget>, uuid: u16) -> Option<usize> {
+fn index_of_item(items: &[Widget], uuid: u16) -> Option<usize> {
     for (index, item) in items.iter().enumerate() {
         let menu_item = get_menu_item_data(item);
         if menu_item.uuid == uuid {

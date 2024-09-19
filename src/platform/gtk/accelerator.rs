@@ -23,7 +23,7 @@ pub(crate) fn setup_accel_group(accelerators: &HashMap<isize, String>) -> AccelG
     let accel_group = AccelGroup::new();
     for (menu_item_handle, accelerator) in accelerators {
         if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
-            let gtk_menu_item = to_menu_item(menu_item_handle.clone());
+            let gtk_menu_item = to_menu_item(*menu_item_handle);
             gtk_menu_item.add_accelerator("activate", &accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
         }
     }
@@ -36,7 +36,7 @@ pub(crate) fn add_accelerator(gtk_menu_handle: isize, new_accelerators: &HashMap
         let accel_group = to_accel_group(accel_group_handle);
         for (menu_item_handle, accelerator) in new_accelerators {
             if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
-                let gtk_menu_item = to_menu_item(menu_item_handle.clone());
+                let gtk_menu_item = to_menu_item(*menu_item_handle);
                 gtk_menu_item.add_accelerator("activate", &accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
             }
         }
