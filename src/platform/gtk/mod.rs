@@ -289,7 +289,9 @@ impl Menu {
         // Click "activate" occurs after automatic menu "hide", so event can have menu item.
         // Keypress "activate" occurs before menu "hide", so event is none that should be dismissed.
         if let Ok(Ok(event)) = timeout(Duration::from_millis(50), MenuEvent::innner_receiver().recv()).await {
-            item = event.item;
+            if event.item.is_some() {
+                item = event.item;
+            }
         }
 
         item
