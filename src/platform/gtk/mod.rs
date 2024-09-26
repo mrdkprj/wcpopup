@@ -3,7 +3,7 @@ use gtk::{
     gdk,
     glib::{monotonic_time, translate::ToGlibPtr, Cast, ObjectExt},
     prelude::{ContainerExt, CssProviderExt, GtkMenuExt, GtkMenuItemExt, GtkSettingsExt, MenuShellExt, SeatExt, StyleContextExt, WidgetExt},
-    ApplicationWindow, CssProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
+    CssProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -22,7 +22,7 @@ use style::*;
 use util::*;
 
 pub(crate) enum Container<'a> {
-    ApplicationWindow(&'a ApplicationWindow),
+    Window(&'a gtk::Window),
     Menu(&'a Menu),
 }
 
@@ -61,12 +61,12 @@ impl Menu {
         }
 
         let (parent_gtk_menu_handle, gtk_window_handle, menu_type) = match parent {
-            Container::ApplicationWindow(app_window) => {
-                gtk_menu.set_attach_widget(Some(app_window));
-                let gtk_window_handle = from_app_window(app_window);
+            Container::Window(gtk_window) => {
+                gtk_menu.set_attach_widget(Some(gtk_window));
+                let gtk_window_handle = from_gtk_window(gtk_window);
                 let gtk_menu_handle = from_menu(&gtk_menu);
 
-                if let Some(settings) = app_window.settings() {
+                if let Some(settings) = gtk_window.settings() {
                     settings.connect_gtk_application_prefer_dark_theme_notify(move |changed_settings| {
                         let theme = if changed_settings.is_gtk_application_prefer_dark_theme() {
                             Theme::Dark
@@ -226,13 +226,13 @@ impl Menu {
 
     /// Shows Menu at the specified point.
     pub fn popup_at(&self, x: i32, y: i32) {
-        let app_window = to_app_window(self.gtk_window_handle);
+        let gtk_window = to_gtk_window(self.gtk_window_handle);
         let gtk_menu = to_menu(self.gtk_menu_handle);
 
         let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
-        event.set_device(app_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
+        event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
 
-        let window = app_window.window().unwrap();
+        let window = gtk_window.window().unwrap();
 
         let event_ffi: *mut gdk::ffi::GdkEvent = event.to_glib_none().0;
         if !event_ffi.is_null() {
@@ -250,13 +250,13 @@ impl Menu {
 
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<MenuItem> {
-        let app_window = to_app_window(self.gtk_window_handle);
+        let gtk_window = to_gtk_window(self.gtk_window_handle);
         let gtk_menu = to_menu(self.gtk_menu_handle);
 
         let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
-        event.set_device(app_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
+        event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
 
-        let window = app_window.window().unwrap();
+        let window = gtk_window.window().unwrap();
 
         let event_ffi: *mut gdk::ffi::GdkEvent = event.to_glib_none().0;
         if !event_ffi.is_null() {

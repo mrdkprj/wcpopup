@@ -1,7 +1,7 @@
 use crate::MenuItemType;
 
 #[cfg(feature = "accelerator")]
-use super::to_app_window;
+use super::to_gtk_window;
 use super::{get_menu_data, to_accel_group, to_menu_item, MenuItem};
 #[cfg(feature = "accelerator")]
 use gtk::{
@@ -115,7 +115,7 @@ pub(crate) fn connect_accelerator(gtk_menu: &gtk::Menu, gtk_menu_handle: isize, 
 
         let data = get_menu_data(gtk_menu_handle);
         let accel_group = to_accel_group(data.accel_group_handle.unwrap());
-        let parent = to_app_window(gtk_window_handle);
+        let parent = to_gtk_window(gtk_window_handle);
         let result = accel_group.activate(accel_quark, &parent, *accel_key, accel_mods);
 
         if result {

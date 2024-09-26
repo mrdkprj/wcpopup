@@ -1,11 +1,11 @@
 use gtk::{
-    ffi::{GtkAccelGroup, GtkApplicationWindow, GtkMenu, GtkMenuItem},
+    ffi::{GtkAccelGroup, GtkMenu, GtkMenuItem, GtkWindow},
     glib::{
         translate::{FromGlibPtrNone, ToGlibPtr},
         IsA, ObjectExt,
     },
     prelude::GtkSettingsExt,
-    AccelGroup, ApplicationWindow, Widget,
+    AccelGroup, Widget,
 };
 
 use super::{FontWeight, MenuData, MenuItem};
@@ -37,13 +37,13 @@ pub(crate) fn set_menu_item_data(gtk_menu_item: &impl IsA<Widget>, item: &mut Me
     unsafe { gtk_menu_item.set_data("data", item.clone()) };
 }
 
-pub(crate) fn to_app_window(gtk_window_handle: isize) -> ApplicationWindow {
-    let window: ApplicationWindow = unsafe { ApplicationWindow::from_glib_none(gtk_window_handle as *mut GtkApplicationWindow) };
+pub(crate) fn to_gtk_window(gtk_window_handle: isize) -> gtk::Window {
+    let window: gtk::Window = unsafe { gtk::Window::from_glib_none(gtk_window_handle as *mut GtkWindow) };
     window
 }
 
-pub(crate) fn from_app_window(gtk_window: &ApplicationWindow) -> isize {
-    let ptr: *mut GtkApplicationWindow = gtk_window.to_glib_none().0;
+pub(crate) fn from_gtk_window(gtk_window: &gtk::Window) -> isize {
+    let ptr: *mut GtkWindow = gtk_window.to_glib_none().0;
     ptr as isize
 }
 

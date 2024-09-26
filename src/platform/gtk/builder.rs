@@ -1,9 +1,8 @@
-use super::{accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_menu, to_app_window, to_menu, Config, Menu, MenuItem, MenuType, Theme};
+use super::{accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_menu, to_gtk_window, to_menu, Config, Menu, MenuItem, MenuType, Theme};
 use crate::MenuItemType;
 use gtk::{
-    glib::{Error, ObjectExt},
+    glib::{Error, IsA, ObjectExt},
     prelude::{GtkWindowExt, MenuShellExt},
-    ApplicationWindow,
 };
 use std::collections::HashMap;
 
@@ -34,19 +33,19 @@ pub(crate) struct SubmenuData {
 impl MenuBuilder {
     /// Creates a new Menu for the specified window handle.
     pub fn new(window_handle: isize) -> Self {
-        let gtk_window = to_app_window(window_handle);
+        let gtk_window = to_gtk_window(window_handle);
         Self::new_builder(&gtk_window)
     }
 
-    /// Creates a new Menu for the specified ApplicationWindow.
-    pub fn new_for_window(window: &ApplicationWindow) -> Self {
+    /// Creates a new Menu for the specified Window.
+    pub fn new_for_window(window: &impl IsA<gtk::Window>) -> Self {
         Self::new_builder(window)
     }
 
-    fn new_builder(window: &ApplicationWindow) -> Self {
+    fn new_builder(window: &impl IsA<gtk::Window>) -> Self {
         let config = Config::default();
         let theme = config.theme;
-        let (menu, _) = Menu::new(super::Container::ApplicationWindow(window), &config);
+        let (menu, _) = Menu::new(super::Container::Window(window.as_ref()), &config);
         Self {
             menu,
             config,
@@ -58,22 +57,22 @@ impl MenuBuilder {
 
     /// Creates a new Menu with the specified Theme for the specified window handle.
     pub fn new_with_theme(window_handle: isize, theme: Theme) -> Self {
-        let gtk_window = to_app_window(window_handle);
+        let gtk_window = to_gtk_window(window_handle);
         Self::new_builder_with_theme(&gtk_window, theme)
     }
 
-    /// Creates a new Menu with the specified Theme for the specified ApplicationWindow.
-    pub fn new_for_window_with_theme(window: &ApplicationWindow, theme: Theme) -> Self {
+    /// Creates a new Menu with the specified Theme for the specified Window.
+    pub fn new_for_window_with_theme(window: &impl IsA<gtk::Window>, theme: Theme) -> Self {
         Self::new_builder_with_theme(window, theme)
     }
 
-    fn new_builder_with_theme(window: &ApplicationWindow, theme: Theme) -> Self {
+    fn new_builder_with_theme(window: &impl IsA<gtk::Window>, theme: Theme) -> Self {
         let config = Config {
             theme,
             ..Default::default()
         };
         let theme = config.theme;
-        let (menu, _) = Menu::new(super::Container::ApplicationWindow(window), &config);
+        let (menu, _) = Menu::new(super::Container::Window(window.as_ref()), &config);
         Self {
             menu,
             config,
@@ -85,18 +84,18 @@ impl MenuBuilder {
 
     /// Creates a new Menu using the specified Config for the specified window handle.
     pub fn new_from_config(window_handle: isize, config: Config) -> Self {
-        let gtk_window = to_app_window(window_handle);
+        let gtk_window = to_gtk_window(window_handle);
         Self::new_builder_from_config(&gtk_window, config)
     }
 
-    /// Creates a new Menu using the specified Config for the specified ApplicationWindow.
-    pub fn new_for_window_from_config(window: &ApplicationWindow, config: Config) -> Self {
+    /// Creates a new Menu using the specified Config for the specified Window.
+    pub fn new_for_window_from_config(window: &impl IsA<gtk::Window>, config: Config) -> Self {
         Self::new_builder_from_config(window, config)
     }
 
-    fn new_builder_from_config(window: &ApplicationWindow, config: Config) -> Self {
+    fn new_builder_from_config(window: &impl IsA<gtk::Window>, config: Config) -> Self {
         let theme = config.theme;
-        let (menu, _) = Menu::new(super::Container::ApplicationWindow(window), &config);
+        let (menu, _) = Menu::new(super::Container::Window(window.as_ref()), &config);
         Self {
             menu,
             config,
@@ -213,7 +212,7 @@ impl MenuBuilder {
         if is_main_menu {
             collect_accelerators(&self.items, &mut accelerators);
             if !accelerators.is_empty() {
-                let gtk_window = to_app_window(self.menu.gtk_window_handle);
+                let gtk_window = to_gtk_window(self.menu.gtk_window_handle);
                 let accel_group = setup_accel_group(&accelerators);
                 gtk_window.add_accel_group(&accel_group);
                 accel_group_handle = Some(from_accel_group(&accel_group));
