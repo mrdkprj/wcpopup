@@ -20,19 +20,27 @@ pub(crate) fn get_widget_name<'a>(theme: Theme) -> &'a str {
 pub(crate) fn get_window_css(config: &Config) -> String {
     format!(
         r#"
-            * {{
+            window#{WIDGET_NAME},
+            window#{DARK_WIDGET_NAME},
+            window#{LIGHT_WIDGET_NAME},
+            window#{WIDGET_NAME} decoration,
+            window#{DARK_WIDGET_NAME} decoration,
+            window#{LIGHT_WIDGET_NAME} decoration
+            {{
                 border-radius: {}px;
             }}
 
-            *#{DARK_WIDGET_NAME} {{
+            window#{DARK_WIDGET_NAME} {{
                 background: {};
             }}
 
-            *{LIGHT_WIDGET_NAME} {{
+            window#{LIGHT_WIDGET_NAME} {{
                 background: {};
             }}
 
-            decoration {{
+            window#{WIDGET_NAME} decoration,
+            window#{DARK_WIDGET_NAME} decoration,
+            window#{LIGHT_WIDGET_NAME} decoration {{
                 box-shadow: 5px 5px 5px 5px rgba(0, 0, 0, 0.2);
             }}
         "#,
