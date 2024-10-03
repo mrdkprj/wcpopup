@@ -107,13 +107,19 @@ impl MenuBuilder {
 
     /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
-        let item = MenuItem::new_text_item(id, label, None, disabled);
+        let item = MenuItem::new_text_item(id, label, None, disabled, None);
         self.items.push(item);
         self
     }
 
     pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let item = MenuItem::new_text_item(id, label, Some(accelerator), disabled);
+        let item = MenuItem::new_text_item(id, label, Some(accelerator), disabled, None);
+        self.items.push(item);
+        self
+    }
+
+    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: Option<&str>, icon: std::path::PathBuf) -> &Self {
+        let item = MenuItem::new_text_item(id, label, accelerator, disabled, Some(icon));
         self.items.push(item);
         self
     }
@@ -173,7 +179,29 @@ impl MenuBuilder {
     /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, id: &str, label: &str, disabled: Option<bool>) -> Self {
         let (menu, gtk_menu) = Menu::new(super::Container::Menu(&self.menu), &self.config);
-        let item = MenuItem::new_submenu_item(id, label, disabled);
+        let item = MenuItem::new_submenu_item(id, label, disabled, None);
+
+        let submenu_data = SubmenuData {
+            gtk_submenu: gtk_menu,
+            submenu: menu.clone(),
+        };
+        self.gtk_submenu.insert(item.uuid, submenu_data);
+
+        let builder = MenuBuilder {
+            menu,
+            theme: self.theme,
+            config: self.config.clone(),
+            gtk_submenu: HashMap::new(),
+            items: Vec::new(),
+        };
+
+        self.items.push(item);
+        builder
+    }
+
+    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, icon: std::path::PathBuf) -> Self {
+        let (menu, gtk_menu) = Menu::new(super::Container::Menu(&self.menu), &self.config);
+        let item = MenuItem::new_submenu_item(id, label, disabled, Some(icon));
 
         let submenu_data = SubmenuData {
             gtk_submenu: gtk_menu,

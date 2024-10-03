@@ -1,4 +1,4 @@
-use super::{direct2d::get_text_metrics, Button, ColorScheme, Config, MenuData, MenuItem, MenuItemType, Theme};
+use super::{direct2d::get_text_metrics, ColorScheme, Config, IconSize, IconSpace, MenuData, MenuItem, MenuItemType, Theme};
 use once_cell::sync::Lazy;
 use std::{
     ffi::c_void,
@@ -21,6 +21,10 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
+
+const MIN_LR_BUTTON_WIDTH: i32 = 12;
+const CHECK_BUTTON_MARGIN: i32 = 10;
+const ARROW_BUTTON_MARGIN: i32 = 5;
 
 macro_rules! hw {
     ($expression:expr) => {
@@ -89,7 +93,7 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
     }
 }
 
-pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data: &MenuItem, theme: Theme, button: Button) -> Result<(i32, i32), Error> {
+pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data: &MenuItem, theme: Theme, icon_space: IconSpace) -> Result<(i32, i32), Error> {
     let mut width = 0;
     #[allow(unused_assignments)]
     let mut height = 0;
@@ -116,8 +120,8 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
 
             width = metrics.width as i32;
             width += config.size.item_horizontal_padding * 2;
-            width += button.left.width + button.left.margins;
-            width += button.right.width + button.right.margins;
+            width += icon_space.left.width + icon_space.left.margins;
+            width += icon_space.right.width + icon_space.right.margins;
             // extra padding
             if !item_data.accelerator.is_empty() {
                 width += 30;
@@ -126,6 +130,49 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
     }
 
     Ok((width, height))
+}
+
+pub(crate) fn get_icon_space(items: &[MenuItem], check_svg_size: f32, arrow_svg_size: f32) -> IconSpace {
+    if items.is_empty() {
+        return IconSpace::default();
+    }
+
+    let has_checkbox = items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
+    let has_submenu = items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu);
+    let has_icon = items.iter().any(|item| item.icon.is_some());
+
+    let sample_item = items.first().unwrap();
+    let item_height = sample_item.bottom - sample_item.top;
+
+    let left_icon_size = if has_icon {
+        std::cmp::max(check_svg_size as i32, item_height)
+    } else {
+        check_svg_size as i32
+    };
+
+    let default_button_size = IconSize {
+        width: MIN_LR_BUTTON_WIDTH,
+        margins: MIN_LR_BUTTON_WIDTH,
+    };
+
+    IconSpace {
+        left: if has_checkbox | has_icon {
+            IconSize {
+                width: left_icon_size,
+                margins: MIN_LR_BUTTON_WIDTH + CHECK_BUTTON_MARGIN * 2,
+            }
+        } else {
+            default_button_size
+        },
+        right: if has_submenu {
+            IconSize {
+                width: arrow_svg_size as i32,
+                margins: MIN_LR_BUTTON_WIDTH + ARROW_BUTTON_MARGIN * 2,
+            }
+        } else {
+            default_button_size
+        },
+    }
 }
 
 pub(crate) fn get_current_theme(theme: Theme) -> Theme {

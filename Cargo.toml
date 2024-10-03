@@ -59,6 +59,7 @@ features = [
   "Win32_Graphics_Dxgi_Common",
   "Win32_Graphics_DirectWrite",
   "Foundation_Numerics",
+  "Win32_Graphics_Imaging",
 ]
 
 [target.'cfg(target_os = "linux")'.dependencies.gtk]

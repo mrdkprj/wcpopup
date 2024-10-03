@@ -1,14 +1,17 @@
+use std::mem::ManuallyDrop;
+
 use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, MenuFont, Theme};
 use windows::{
-    core::{w, Error, Interface},
+    core::{w, Error, Interface, PCWSTR},
     Win32::{
-        Foundation::RECT,
+        Foundation::{GENERIC_READ, RECT},
         Graphics::{
             Direct2D::{
-                Common::{D2D1_ALPHA_MODE_IGNORE, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_F},
-                D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1DeviceContext5, ID2D1Factory1, ID2D1SvgDocument, ID2D1SvgElement, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-                D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, D2D1_SVG_PATH_COMMAND_ARC_RELATIVE,
-                D2D1_SVG_PATH_COMMAND_LINE_ABSOLUTE, D2D1_SVG_PATH_COMMAND_LINE_RELATIVE, D2D1_SVG_PATH_COMMAND_MOVE_ABSOLUTE,
+                Common::{D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_F},
+                D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1DeviceContext5, ID2D1Factory1, ID2D1SvgDocument, ID2D1SvgElement, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+                D2D1_BITMAP_OPTIONS_NONE, D2D1_BITMAP_PROPERTIES1, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                D2D1_RENDER_TARGET_USAGE_NONE, D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, D2D1_SVG_PATH_COMMAND_ARC_RELATIVE, D2D1_SVG_PATH_COMMAND_LINE_ABSOLUTE, D2D1_SVG_PATH_COMMAND_LINE_RELATIVE,
+                D2D1_SVG_PATH_COMMAND_MOVE_ABSOLUTE,
             },
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
@@ -16,7 +19,9 @@ use windows::{
                 DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS, DWRITE_WORD_WRAPPING_NO_WRAP,
             },
             Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
+            Imaging::{CLSID_WICImagingFactory, IWICImagingFactory, WICDecodeMetadataCacheOnDemand},
         },
+        System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
     },
 };
 
@@ -128,6 +133,43 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFon
         document,
         size,
     }
+}
+
+pub(crate) fn draw_image(target: &ID2D1DCRenderTarget, icon: &std::path::Path, base_rect: &RECT) -> Result<(), Error> {
+    let dc5 = get_device_context(target);
+
+    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+    let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
+
+    let image_path = super::encode_wide(icon.as_os_str());
+    let file_path = PCWSTR::from_raw(image_path.as_ptr());
+    let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)? };
+
+    // Get the first frame of the image
+    let frame = unsafe { decoder.GetFrame(0).unwrap() };
+
+    let bitmap = unsafe {
+        dc5.CreateBitmapFromWicBitmap(
+            &frame,
+            Some(&D2D1_BITMAP_PROPERTIES1 {
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                dpiX: 0.0,
+                dpiY: 0.0,
+                bitmapOptions: D2D1_BITMAP_OPTIONS_NONE,
+                colorContext: ManuallyDrop::new(None),
+            }),
+        )
+    }?;
+
+    unsafe { target.DrawBitmap(&bitmap, Some(&to_2d_rect(base_rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, None) };
+
+    unsafe { CoUninitialize() };
+
+    Ok(())
 }
 
 pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFont) -> SvgDocument {

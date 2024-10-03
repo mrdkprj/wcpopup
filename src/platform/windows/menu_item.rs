@@ -28,11 +28,23 @@ pub struct MenuItem {
     pub(crate) right: i32,
     pub(crate) bottom: i32,
     pub(crate) items: Option<Vec<MenuItem>>,
+    pub(crate) icon: Option<std::path::PathBuf>,
 }
 
 impl MenuItem {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(window_handle: isize, id: &str, label: &str, accelerator: &str, name: &str, checked: bool, disabled: Option<bool>, menu_item_type: MenuItemType, submenu: Option<Menu>) -> Self {
+    pub(crate) fn new(
+        window_handle: isize,
+        id: &str,
+        label: &str,
+        accelerator: &str,
+        name: &str,
+        checked: bool,
+        disabled: Option<bool>,
+        menu_item_type: MenuItemType,
+        submenu: Option<Menu>,
+        icon: Option<std::path::PathBuf>,
+    ) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -50,6 +62,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon,
         }
     }
 
@@ -70,7 +83,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>) -> Self {
+    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -88,6 +101,7 @@ impl MenuItem {
             checked: false,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon,
         }
     }
 }
@@ -111,6 +125,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon: None,
         }
     }
 
@@ -132,6 +147,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon: None,
         }
     }
 
@@ -150,8 +166,8 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>) -> Self {
-        let mut item = MenuItem::new(0, id, label, "", "", false, disabled, MenuItemType::Submenu, None);
+    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
+        let mut item = MenuItem::new(0, id, label, "", "", false, disabled, MenuItemType::Submenu, None, icon);
         item.items = Some(Vec::new());
         item
     }
@@ -182,6 +198,7 @@ impl MenuItem {
             checked: false,
             disabled: false,
             items: None,
+            icon: None,
         }
     }
 }

@@ -8,7 +8,7 @@ use gtk::{
     ffi::{gtk_style_context_add_provider_for_screen, GtkStyleProvider},
     gdk::ffi::gdk_screen_get_default,
     glib::{translate::ToGlibPtr, Cast},
-    prelude::{CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, WidgetExt},
+    prelude::{CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, StyleContextExt, WidgetExt},
     CssProvider, StyleProvider, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use serde::{Deserialize, Serialize};
@@ -33,6 +33,7 @@ pub struct MenuItem {
     pub uuid: u16,
     pub(crate) gtk_menu_item: isize,
     pub(crate) items: Option<Vec<MenuItem>>,
+    pub(crate) icon: Option<std::path::PathBuf>,
     suppress_event: bool,
 }
 
@@ -57,7 +58,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>) -> Self {
+    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -70,6 +71,7 @@ impl MenuItem {
             checked: false,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon,
             suppress_event: false,
         }
     }
@@ -89,6 +91,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon: None,
             suppress_event: false,
         }
     }
@@ -106,6 +109,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
+            icon: None,
             suppress_event: false,
         }
     }
@@ -128,7 +132,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>) -> Self {
+    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
         let menu = Menu {
             menu_type: MenuType::Submenu,
             ..Default::default()
@@ -145,6 +149,7 @@ impl MenuItem {
             checked: false,
             disabled: disabled.unwrap_or(false),
             items: Some(Vec::new()),
+            icon,
             suppress_event: false,
         }
     }
@@ -171,6 +176,7 @@ impl MenuItem {
             checked: false,
             disabled: false,
             items: None,
+            icon: None,
             suppress_event: false,
         }
     }
@@ -181,6 +187,29 @@ pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::Rad
     HashMap::from([(item.name.clone(), gtk_radio_item)])
 }
 
+fn create_icon_menu_item(item: &MenuItem, icon: &std::path::PathBuf, submenu: Option<&gtk::Menu>) -> gtk::MenuItem {
+    let check_menu_item = gtk::CheckMenuItem::builder().label(item.label.as_str()).active(false).sensitive(!item.disabled).build();
+    let css_provider = CssProvider::new();
+    let url = icon.to_string_lossy();
+    let theme = format!(
+        r#"
+            menuitem check {{
+                -gtk-icon-source: url("{url}");
+            }}
+        "#
+    );
+    css_provider.load_from_data(theme.as_bytes()).unwrap();
+    check_menu_item.style_context().add_provider(&css_provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+    let gtk_menu_item = check_menu_item.upcast::<gtk::MenuItem>();
+
+    if submenu.is_some() {
+        gtk_menu_item.set_submenu(submenu);
+    }
+
+    gtk_menu_item
+}
+
 pub(crate) fn create_gtk_menu_item(
     item: &mut MenuItem,
     submenudata_map: Option<&HashMap<u16, SubmenuData>>,
@@ -189,7 +218,11 @@ pub(crate) fn create_gtk_menu_item(
 ) -> gtk::MenuItem {
     let gtk_menu_item = match item.menu_item_type {
         MenuItemType::Text => {
-            let gtk_menu_item = gtk::MenuItem::builder().label(item.label.as_str()).sensitive(!item.disabled).build();
+            let gtk_menu_item = if let Some(icon) = &item.icon {
+                create_icon_menu_item(item, icon, None)
+            } else {
+                gtk::MenuItem::builder().label(item.label.as_str()).sensitive(!item.disabled).build()
+            };
             item.gtk_menu_item = from_menu_item(&gtk_menu_item);
             gtk_menu_item
         }
@@ -224,7 +257,11 @@ pub(crate) fn create_gtk_menu_item(
             if submedata.gtk_submenu.children().is_empty() {
                 submedata.gtk_submenu.set_sensitive(false);
             }
-            let gtk_menu_item = gtk::MenuItem::builder().label(&item.label).submenu(&submedata.gtk_submenu).sensitive(!item.disabled).build();
+            let gtk_menu_item = if let Some(icon) = &item.icon {
+                create_icon_menu_item(item, icon, Some(&submedata.gtk_submenu))
+            } else {
+                gtk::MenuItem::builder().label(&item.label).submenu(&submedata.gtk_submenu).sensitive(!item.disabled).build()
+            };
             item.gtk_menu_item = from_menu_item(&gtk_menu_item);
             item.submenu = Some(submedata.submenu.clone());
 

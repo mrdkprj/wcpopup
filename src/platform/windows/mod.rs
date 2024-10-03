@@ -8,7 +8,7 @@ use crate::{MenuEvent, MenuItemType, MenuType, ThemeChangeFactor};
 #[cfg(feature = "accelerator")]
 use accelerator::{create_haccel, destroy_haccel, translate_accel};
 pub use builder::*;
-use direct2d::{colorref_to_d2d1_color_f, create_write_factory, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
+use direct2d::{colorref_to_d2d1_color_f, create_write_factory, draw_image, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
 pub use menu_item::*;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "accelerator")]
@@ -86,14 +86,14 @@ pub(crate) struct Size {
     height: i32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Button {
-    left: ButtonSize,
-    right: ButtonSize,
+#[derive(Default, Clone, Copy, Debug)]
+pub(crate) struct IconSpace {
+    left: IconSize,
+    right: IconSize,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ButtonSize {
+#[derive(Default, Clone, Copy, Debug)]
+pub(crate) struct IconSize {
     width: i32,
     margins: i32,
 }
@@ -364,10 +364,11 @@ impl Menu {
 }
 
 fn recalculate(data: &mut MenuData) {
-    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.button).unwrap();
+    data.icon_space = get_icon_space(&data.items, unsafe { data.check_svg.GetViewportSize().width }, unsafe { data.submenu_svg.GetViewportSize().width });
+    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
 }
 
-fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, button: Button) -> Result<Size, Error> {
+fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Result<Size, Error> {
     let mut width = 0;
     let mut height = 0;
 
@@ -387,7 +388,7 @@ fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, button: Butt
 
         item.top = height;
         item.left = config.size.border_size + config.size.horizontal_padding;
-        let (item_width, item_height) = measure_item(&factory, config, item, theme, button)?;
+        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space)?;
         item.bottom = item.top + item_height;
 
         width = std::cmp::max(width, item_width);
@@ -956,6 +957,10 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>) -> Result<(), Error> {
                     draw_checkmark(data, &item_rect, scheme, disabled)?;
                 }
 
+                if item.icon.is_some() {
+                    draw_icon(data, item, &item_rect)?;
+                }
+
                 if item.menu_item_type == MenuItemType::Submenu {
                     draw_submenu_arrow(data, &item_rect, scheme, disabled)?;
                 }
@@ -985,9 +990,9 @@ fn fill_background(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, sele
 fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
     // Keep space for check mark and submenu mark
     let text_rect = RECT {
-        left: item_rect.left + (data.button.left.width + data.button.left.margins),
+        left: item_rect.left + (data.icon_space.left.width + data.icon_space.left.margins),
         top: item_rect.top,
-        right: item_rect.right - (data.button.right.width + data.button.right.margins),
+        right: item_rect.right - (data.icon_space.right.width + data.icon_space.right.margins),
         bottom: item_rect.bottom,
     };
 
@@ -1019,13 +1024,13 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
 }
 
 fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.button.left.margins / 2;
-    let button = data.button.left.width;
+    let margin = data.icon_space.left.margins / 2;
+    let icon_width = data.icon_space.left.width;
     let mut check_rect = RECT {
         left: item_rect.left + margin,
         top: item_rect.top,
-        right: item_rect.left + margin + button + margin,
-        bottom: item_rect.top + button,
+        right: item_rect.left + margin + icon_width + margin,
+        bottom: item_rect.top + icon_width,
     };
 
     // center vertically
@@ -1051,14 +1056,29 @@ fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disab
     Ok(())
 }
 
+fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT) -> Result<(), Error> {
+    let margin = data.icon_space.left.margins / 2;
+    let icon_width = data.icon_space.left.width;
+    let icon_rect = RECT {
+        left: item_rect.left + margin,
+        top: item_rect.top,
+        right: item_rect.left + icon_width + margin,
+        bottom: item_rect.top + icon_width,
+    };
+
+    draw_image(&data.dc_render_target, item.icon.as_ref().unwrap(), &icon_rect)?;
+
+    Ok(())
+}
+
 fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.button.right.margins / 2;
-    let button = data.button.right.width;
+    let margin = data.icon_space.right.margins / 2;
+    let icon_width = data.icon_space.right.width;
     let mut arrow_rect = RECT {
-        left: item_rect.right - (margin + button),
+        left: item_rect.right - (margin + icon_width),
         top: item_rect.top,
         right: item_rect.right - margin,
-        bottom: item_rect.top + button,
+        bottom: item_rect.top + icon_width,
     };
 
     // center vertically

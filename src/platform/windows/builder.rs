@@ -3,9 +3,9 @@ use super::accelerator::create_haccel;
 use super::{
     calculate,
     direct2d::{create_check_svg, create_render_target, create_submenu_svg},
-    get_menu_data, hw, is_win11,
+    get_icon_space, get_menu_data, hw, is_win11,
     menu_item::MenuItem,
-    set_window_border_color, Button, ButtonSize, Config, Corner, Menu, PopupInfo, Size, Theme,
+    set_window_border_color, Config, Corner, IconSpace, Menu, PopupInfo, Size, Theme,
 };
 use crate::{MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
@@ -32,9 +32,6 @@ use windows::{
 };
 
 static COUNTER: AtomicU32 = AtomicU32::new(400);
-const MIN_LR_BUTTON_WIDTH: i32 = 12;
-const CHECK_BUTTON_MARGIN: i32 = 10;
-const ARROW_BUTTON_MARGIN: i32 = 5;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MenuData {
@@ -44,7 +41,7 @@ pub(crate) struct MenuData {
     pub(crate) win_subclass_id: Option<u32>,
     pub(crate) selected_index: i32,
     pub(crate) size: Size,
-    pub(crate) button: Button,
+    pub(crate) icon_space: IconSpace,
     pub(crate) visible_submenu_index: i32,
     pub(crate) current_theme: Theme,
     pub(crate) config: Config,
@@ -156,14 +153,21 @@ impl MenuBuilder {
 
     /// Adds a text MenuItem to Menu.
     pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_text_item(id, label, None, disabled);
+        let mut item = MenuItem::new_text_item(id, label, None, disabled, None);
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_text_item(id, label, Some(accelerator), disabled);
+        let mut item = MenuItem::new_text_item(id, label, Some(accelerator), disabled, None);
+        item.menu_window_handle = self.menu.window_handle;
+        self.items.push(item);
+        self
+    }
+
+    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: Option<&str>, icon: std::path::PathBuf) -> &Self {
+        let mut item = MenuItem::new_text_item(id, label, accelerator, disabled, Some(icon));
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
@@ -209,7 +213,19 @@ impl MenuBuilder {
 
     /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, id: &str, label: &str, disabled: Option<bool>) -> Self {
-        let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None);
+        let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, None);
+        let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
+        builder.menu_type = MenuType::Submenu;
+
+        // Set dummy menu to be replaced later
+        item.submenu = Some(builder.menu.clone());
+        self.items.push(item);
+
+        builder
+    }
+
+    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, icon: std::path::PathBuf) -> Self {
+        let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, Some(icon));
         let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
         builder.menu_type = MenuType::Submenu;
 
@@ -276,35 +292,11 @@ impl MenuBuilder {
         let check_svg_doc = create_check_svg(&dc_render_target, &self.config.font);
         let submenu_svg_doc = create_submenu_svg(&dc_render_target, &self.config.font);
 
-        let has_checkbox = self.items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
-        let has_submenu = self.items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu);
-        let default_button_size = ButtonSize {
-            width: MIN_LR_BUTTON_WIDTH,
-            margins: MIN_LR_BUTTON_WIDTH,
-        };
-        let button = Button {
-            left: if has_checkbox {
-                ButtonSize {
-                    width: check_svg_doc.size as i32,
-                    margins: MIN_LR_BUTTON_WIDTH + CHECK_BUTTON_MARGIN * 2,
-                }
-            } else {
-                default_button_size
-            },
-            right: if has_submenu {
-                ButtonSize {
-                    width: submenu_svg_doc.size as i32,
-                    margins: MIN_LR_BUTTON_WIDTH + ARROW_BUTTON_MARGIN * 2,
-                }
-            } else {
-                default_button_size
-            },
-        };
-
-        let size = calculate(&mut self.items, &self.config, self.config.theme, button)?;
+        let icon_space = get_icon_space(&self.items, check_svg_doc.size, submenu_svg_doc.size);
+        let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
 
         if is_main_menu {
-            self.rebuild_submenu(button);
+            self.rebuild_submenu(icon_space);
         }
 
         let data = MenuData {
@@ -320,7 +312,7 @@ impl MenuBuilder {
             #[cfg(feature = "accelerator")]
             accelerators,
             size,
-            button,
+            icon_space,
             selected_index: -1,
             visible_submenu_index: -1,
             current_theme: self.theme,
@@ -354,12 +346,12 @@ impl MenuBuilder {
         Ok(self.menu.clone())
     }
 
-    fn rebuild_submenu(&mut self, buttom: Button) {
+    fn rebuild_submenu(&mut self, icon_space: IconSpace) {
         for item in self.items.iter_mut() {
             if item.menu_item_type == MenuItemType::Submenu {
                 let mut submenu = item.submenu.as_ref().unwrap().clone();
                 submenu.menu_type = MenuType::Submenu;
-                let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, buttom);
+                let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, icon_space);
                 item.submenu = Some(submenu);
             }
         }
