@@ -187,7 +187,7 @@ pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::Rad
     HashMap::from([(item.name.clone(), gtk_radio_item)])
 }
 
-fn create_icon_menu_item(item: &MenuItem, icon: &std::path::PathBuf, submenu: Option<&gtk::Menu>) -> gtk::MenuItem {
+fn create_icon_menu_item(item: &MenuItem, icon: &std::path::Path, submenu: Option<&gtk::Menu>) -> gtk::MenuItem {
     let check_menu_item = gtk::CheckMenuItem::builder().label(item.label.as_str()).active(false).sensitive(!item.disabled).build();
     let css_provider = CssProvider::new();
     let url = icon.to_string_lossy();
