@@ -178,6 +178,8 @@ impl Menu {
         data.items.push(item);
         recalculate(data);
 
+        Self::reset_radio(data, data.items.last().unwrap().clone());
+
         set_menu_data(self.window_handle, data);
     }
 
@@ -196,6 +198,9 @@ impl Menu {
         // Add before recalc
         data.items.insert(index as usize, item);
         recalculate(data);
+
+        Self::reset_radio(data, data.items[index as usize].clone());
+
         set_menu_data(self.window_handle, data);
     }
 
@@ -203,6 +208,12 @@ impl Menu {
         let mut builder = MenuBuilder::new_for_submenu(self, item.items.as_mut().unwrap());
         let memnu = builder.build().unwrap();
         item.submenu = Some(memnu);
+    }
+
+    fn reset_radio(data: &mut MenuData, item: MenuItem) {
+        if item.menu_item_type == MenuItemType::Radio && item.checked {
+            toggle_radio(data, item.index as usize);
+        }
     }
 
     /// Removes the MenuItem at the specified index.
