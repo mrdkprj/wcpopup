@@ -1,4 +1,5 @@
 use super::{
+    direct2d::create_menu_image,
     recalculate,
     util::{get_menu_data_mut, set_menu_data, toggle_radio},
     Menu,
@@ -20,6 +21,7 @@ pub struct MenuItem {
     pub submenu: Option<Menu>,
     pub checked: bool,
     pub disabled: bool,
+    pub icon: Option<std::path::PathBuf>,
     pub uuid: u16,
     pub index: i32,
     pub(crate) menu_window_handle: isize,
@@ -28,7 +30,6 @@ pub struct MenuItem {
     pub(crate) right: i32,
     pub(crate) bottom: i32,
     pub(crate) items: Option<Vec<MenuItem>>,
-    pub(crate) icon: Option<std::path::PathBuf>,
 }
 
 impl MenuItem {
@@ -79,6 +80,30 @@ impl MenuItem {
         data.items[self.index as usize].label = label.to_string();
         recalculate(data);
         set_menu_data(self.menu_window_handle, data);
+    }
+
+    pub fn set_icon(&mut self, icon: Option<std::path::PathBuf>) {
+        match self.menu_item_type {
+            MenuItemType::Text | MenuItemType::Submenu => {
+                self.icon = icon;
+                let data = get_menu_data_mut(self.menu_window_handle);
+
+                if data.items[self.index as usize].icon.is_some() {
+                    let _ = data.icon_map.remove(&self.uuid);
+                }
+
+                if let Some(icon) = &self.icon {
+                    let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
+                    data.icon_map.insert(self.uuid, bitmap);
+                }
+
+                data.items[self.index as usize].icon.clone_from(&self.icon);
+
+                recalculate(data);
+                set_menu_data(self.menu_window_handle, data);
+            }
+            _ => {}
+        }
     }
 }
 

@@ -1,4 +1,4 @@
-use super::{direct2d::get_text_metrics, ColorScheme, Config, IconSize, IconSpace, MenuData, MenuItem, MenuItemType, Theme};
+use super::{direct2d::get_text_metrics, ColorScheme, Config, IconSpace, MenuData, MenuItem, MenuItemType, Theme};
 use once_cell::sync::Lazy;
 use std::{
     ffi::c_void,
@@ -21,10 +21,6 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
-
-const MIN_LR_BUTTON_WIDTH: i32 = 12;
-const CHECK_BUTTON_MARGIN: i32 = 10;
-const ARROW_BUTTON_MARGIN: i32 = 5;
 
 macro_rules! hw {
     ($expression:expr) => {
@@ -60,8 +56,8 @@ pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
 }
 
-pub(crate) fn to_pcwstr(value: &str) -> PCWSTR {
-    PCWSTR::from_raw(encode_wide(value).as_ptr())
+pub(crate) fn to_pcwstr(string: impl AsRef<std::ffi::OsStr>) -> PCWSTR {
+    PCWSTR::from_raw(encode_wide(string).as_ptr())
 }
 
 #[allow(dead_code)]
@@ -130,49 +126,6 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
     }
 
     Ok((width, height))
-}
-
-pub(crate) fn get_icon_space(items: &[MenuItem], check_svg_size: f32, arrow_svg_size: f32) -> IconSpace {
-    if items.is_empty() {
-        return IconSpace::default();
-    }
-
-    let has_checkbox = items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
-    let has_submenu = items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu);
-    let has_icon = items.iter().any(|item| item.icon.is_some());
-
-    let sample_item = items.first().unwrap();
-    let item_height = sample_item.bottom - sample_item.top;
-
-    let left_icon_size = if has_icon {
-        std::cmp::max(check_svg_size as i32, item_height)
-    } else {
-        check_svg_size as i32
-    };
-
-    let default_button_size = IconSize {
-        width: MIN_LR_BUTTON_WIDTH,
-        margins: MIN_LR_BUTTON_WIDTH,
-    };
-
-    IconSpace {
-        left: if has_checkbox | has_icon {
-            IconSize {
-                width: left_icon_size,
-                margins: MIN_LR_BUTTON_WIDTH + CHECK_BUTTON_MARGIN * 2,
-            }
-        } else {
-            default_button_size
-        },
-        right: if has_submenu {
-            IconSize {
-                width: arrow_svg_size as i32,
-                margins: MIN_LR_BUTTON_WIDTH + ARROW_BUTTON_MARGIN * 2,
-            }
-        } else {
-            default_button_size
-        },
-    }
 }
 
 pub(crate) fn get_current_theme(theme: Theme) -> Theme {

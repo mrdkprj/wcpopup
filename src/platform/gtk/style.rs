@@ -265,3 +265,23 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.disabled),
     )
 }
+
+pub(crate) fn get_icon_menu_css(icon: &Option<std::path::PathBuf>) -> String {
+    if let Some(icon) = icon {
+        let url = icon.to_string_lossy();
+        format!(
+            r#"
+                menuitem check {{
+                    -gtk-icon-source: -gtk-recolor(url("{url}"))
+                }}
+            "#
+        )
+    } else {
+        r#"
+            menuitem check {
+                -gtk-icon-source: none;
+            }
+        "#
+        .to_string()
+    }
+}

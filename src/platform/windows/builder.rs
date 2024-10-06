@@ -2,17 +2,16 @@
 use super::accelerator::create_haccel;
 use super::{
     calculate,
-    direct2d::{create_check_svg, create_render_target, create_submenu_svg},
-    get_icon_space, get_menu_data, hw, is_win11,
+    direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, get_icon_space},
+    get_menu_data, hw, is_win11,
     menu_item::MenuItem,
     set_window_border_color, Config, Corner, IconSpace, Menu, PopupInfo, Size, Theme,
 };
 use crate::{MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
-use std::collections::HashMap;
-#[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use std::{
+    collections::HashMap,
     mem::size_of,
     os::raw::c_void,
     sync::atomic::{AtomicU32, Ordering},
@@ -24,7 +23,7 @@ use windows::{
     Win32::{
         Foundation::HWND,
         Graphics::{
-            Direct2D::{ID2D1DCRenderTarget, ID2D1SvgDocument},
+            Direct2D::{ID2D1Bitmap1, ID2D1DCRenderTarget, ID2D1SvgDocument},
             Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE},
         },
         UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA},
@@ -32,6 +31,12 @@ use windows::{
 };
 
 static COUNTER: AtomicU32 = AtomicU32::new(400);
+
+#[derive(Debug, Clone)]
+pub(crate) enum MenuImage {
+    Bitmap(ID2D1Bitmap1),
+    Svg(ID2D1SvgDocument),
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct MenuData {
@@ -49,6 +54,7 @@ pub(crate) struct MenuData {
     pub(crate) dc_render_target: ID2D1DCRenderTarget,
     pub(crate) check_svg: ID2D1SvgDocument,
     pub(crate) submenu_svg: ID2D1SvgDocument,
+    pub(crate) icon_map: HashMap<u16, MenuImage>,
     #[cfg(feature = "accelerator")]
     pub(crate) haccel: Option<Rc<HACCEL>>,
     #[cfg(feature = "accelerator")]
@@ -292,11 +298,19 @@ impl MenuBuilder {
         let check_svg_doc = create_check_svg(&dc_render_target, &self.config.font);
         let submenu_svg_doc = create_submenu_svg(&dc_render_target, &self.config.font);
 
-        let icon_space = get_icon_space(&self.items, check_svg_doc.size, submenu_svg_doc.size);
+        let icon_space = get_icon_space(&self.items, &check_svg_doc, &submenu_svg_doc);
         let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
 
         if is_main_menu {
             self.rebuild_submenu(icon_space);
+        }
+
+        let mut icon_map = HashMap::new();
+        for item in &self.items {
+            if let Some(icon) = &item.icon {
+                let bitmap = create_menu_image(&dc_render_target, icon, icon_space.left.width);
+                icon_map.insert(item.uuid, bitmap);
+            }
         }
 
         let data = MenuData {
@@ -323,9 +337,10 @@ impl MenuBuilder {
                 self.menu.parent_window_handle
             },
             dc_render_target,
-            check_svg: check_svg_doc.document,
-            submenu_svg: submenu_svg_doc.document,
+            check_svg: check_svg_doc,
+            submenu_svg: submenu_svg_doc,
             popup_info: None,
+            icon_map,
         };
 
         if is_main_menu {

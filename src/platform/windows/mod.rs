@@ -8,13 +8,14 @@ use crate::{MenuEvent, MenuItemType, MenuType, ThemeChangeFactor};
 #[cfg(feature = "accelerator")]
 use accelerator::{create_haccel, destroy_haccel, translate_accel};
 pub use builder::*;
-use direct2d::{colorref_to_d2d1_color_f, create_write_factory, draw_image, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
+use direct2d::{colorref_to_d2d1_color_f, create_menu_image, create_write_factory, get_device_context, get_icon_space, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
 pub use menu_item::*;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use std::{ffi::c_void, mem::size_of};
 use util::*;
+use windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR;
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
 use windows::{
@@ -172,8 +173,11 @@ impl Menu {
 
         let data = get_menu_data_mut(self.window_handle);
         item.menu_window_handle = self.window_handle;
+        refresh_menu_icon(data, &item, false);
+        // Add before recalc
         data.items.push(item);
         recalculate(data);
+
         set_menu_data(self.window_handle, data);
     }
 
@@ -188,6 +192,8 @@ impl Menu {
 
         let data = get_menu_data_mut(self.window_handle);
         item.menu_window_handle = self.window_handle;
+        refresh_menu_icon(data, &item, false);
+        // Add before recalc
         data.items.insert(index as usize, item);
         recalculate(data);
         set_menu_data(self.window_handle, data);
@@ -207,6 +213,7 @@ impl Menu {
         }
 
         let removed_item = data.items.remove(index as usize);
+        refresh_menu_icon(data, &removed_item, true);
         recalculate(data);
         #[cfg(feature = "accelerator")]
         self.reset_haccel(&removed_item, true);
@@ -363,8 +370,18 @@ impl Menu {
     }
 }
 
+fn refresh_menu_icon(data: &mut MenuData, item: &MenuItem, should_remove: bool) {
+    if let Some(icon) = &item.icon {
+        if should_remove {
+            let _ = data.icon_map.remove(&item.uuid);
+        } else {
+            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
+            data.icon_map.insert(item.uuid, bitmap);
+        }
+    }
+}
 fn recalculate(data: &mut MenuData) {
-    data.icon_space = get_icon_space(&data.items, unsafe { data.check_svg.GetViewportSize().width }, unsafe { data.submenu_svg.GetViewportSize().width });
+    data.icon_space = get_icon_space(&data.items, &data.check_svg, &data.submenu_svg);
     data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
 }
 
@@ -958,7 +975,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>) -> Result<(), Error> {
                 }
 
                 if item.icon.is_some() {
-                    draw_icon(data, item, &item_rect)?;
+                    draw_icon(data, item, &item_rect, scheme, disabled)?;
                 }
 
                 if item.menu_item_type == MenuItemType::Submenu {
@@ -1056,7 +1073,7 @@ fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disab
     Ok(())
 }
 
-fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT) -> Result<(), Error> {
+fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
     let margin = data.icon_space.left.margins / 2;
     let icon_width = data.icon_space.left.width;
     let icon_rect = RECT {
@@ -1066,7 +1083,25 @@ fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT) -> Result<(), E
         bottom: item_rect.top + icon_width,
     };
 
-    draw_image(&data.dc_render_target, item.icon.as_ref().unwrap(), &icon_rect)?;
+    match data.icon_map.get(&item.uuid).unwrap() {
+        MenuImage::Bitmap(bitmap) => {
+            unsafe { data.dc_render_target.DrawBitmap(bitmap, Some(&to_2d_rect(&icon_rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, None) };
+        }
+        MenuImage::Svg(svg) => {
+            let dc5 = get_device_context(&data.dc_render_target);
+            let color = if disabled {
+                scheme.disabled
+            } else {
+                scheme.color
+            };
+            let element = unsafe { svg.GetRoot() }?;
+            set_fill_color(&element, color);
+            let translation = Matrix3x2::translation(icon_rect.left as f32, icon_rect.top as f32);
+            unsafe { dc5.SetTransform(&translation) };
+            unsafe { dc5.DrawSvgDocument(svg) };
+            unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+        }
+    }
 
     Ok(())
 }
