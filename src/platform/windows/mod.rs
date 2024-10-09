@@ -783,15 +783,6 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
             DefSubclassProc(window, msg, wparam, lparam)
         }
 
-        WM_SETTINGCHANGE => {
-            if lparam.0 == 0 {
-                let hwnd_ptr = dwrefdata as *const HWND;
-                let hwnd = unsafe { *hwnd_ptr };
-                on_theme_change(vtoi!(hwnd.0), None, ThemeChangeFactor::App);
-            }
-            DefSubclassProc(window, msg, wparam, lparam)
-        }
-
         WM_THEMECHANGED => {
             let hwnd_ptr = dwrefdata as *const HWND;
             let hwnd = unsafe { *hwnd_ptr };

@@ -1,9 +1,9 @@
 [package]
 name = "wcpopup"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
 description = "Context menu for Windows and Linux"
-documentation = "https://docs.rs/wcpopup/0.3.3/wcpopup/"
+documentation = "https://docs.rs/wcpopup/0.3.4/wcpopup/"
 readme = "README.md"
 categories = ["gui"]
 keywords = [
