@@ -1,4 +1,10 @@
-# wcpopup
+# wcpopup &emsp;  [![Latest Version]][crates.io] [![Documentation]][docs]
+
+[Documentation]: https://docs.rs/wcpopup/badge.svg
+[docs]: https://docs.rs/wcpopup
+[Latest Version]: https://img.shields.io/crates/v/wcpopup.svg
+[crates.io]: https://crates.io/crates/wcpopup
+
 Rust context menu for Windows and Linux(Gtk3).  
 Supports dark/light theme and color/size configuration. 
 - Colors
