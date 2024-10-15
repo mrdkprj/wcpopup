@@ -79,7 +79,8 @@ Using WebView2, you may need to enable the feature flag.
 ```
 
 ### Linux
-Gtk3 is required.
+Gtk3 is required.  
+MenuItem's text color is applied to SVG icon if the SVG file contains the "symbolic" term as the last component of the file name.  
 
 ## Accelerator
 Accelerators are used only to display available shortcut keys by default.  
