@@ -2,10 +2,10 @@
 use super::accelerator::create_haccel;
 use super::{
     calculate,
-    direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, get_icon_space},
+    direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, create_svg_from_path, get_icon_space},
     get_menu_data, hw, is_win11,
     menu_item::MenuItem,
-    set_window_border_color, Config, Corner, IconSpace, Menu, PopupInfo, Size, Theme,
+    set_window_border_color, Config, Corner, Icon, IconSpace, Menu, PopupInfo, Size, Theme,
 };
 use crate::{MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
@@ -14,6 +14,7 @@ use std::{
     collections::HashMap,
     mem::size_of,
     os::raw::c_void,
+    path::PathBuf,
     sync::atomic::{AtomicU32, Ordering},
 };
 #[cfg(feature = "accelerator")]
@@ -141,6 +142,7 @@ impl MenuBuilder {
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
         let theme = config.theme;
+
         Self {
             menu,
             items: Vec::new(),
@@ -149,6 +151,11 @@ impl MenuBuilder {
                     Corner::DoNotRound
                 } else {
                     config.corner
+                },
+                icon: if let Some(icon) = config.icon {
+                    Some(icon)
+                } else {
+                    Some(Icon::default())
                 },
                 ..config
             },
@@ -172,7 +179,7 @@ impl MenuBuilder {
         self
     }
 
-    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: Option<&str>, icon: std::path::PathBuf) -> &Self {
+    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
         let mut item = MenuItem::new_text_item(id, label, accelerator, disabled, Some(icon));
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
@@ -181,14 +188,21 @@ impl MenuBuilder {
 
     /// Adds a check MenuItem to Menu.
     pub fn check(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_check_item(id, label, None, checked, disabled);
+        let mut item = MenuItem::new_check_item(id, label, None, checked, disabled, None);
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     pub fn check_with_accelerator(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_check_item(id, label, Some(accelerator), checked, disabled);
+        let mut item = MenuItem::new_check_item(id, label, Some(accelerator), checked, disabled, None);
+        item.menu_window_handle = self.menu.window_handle;
+        self.items.push(item);
+        self
+    }
+
+    pub fn check_with_icon(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
+        let mut item = MenuItem::new_check_item(id, label, accelerator, checked, disabled, Some(icon));
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
@@ -196,14 +210,22 @@ impl MenuBuilder {
 
     /// Adds a radio MenuItem to Menu.
     pub fn radio(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
-        let mut item = MenuItem::new_radio_item(id, label, name, None, checked, disabled);
+        let mut item = MenuItem::new_radio_item(id, label, name, None, checked, disabled, None);
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
     }
 
     pub fn radio_with_accelerator(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
-        let mut item = MenuItem::new_radio_item(id, label, name, Some(accelerator), checked, disabled);
+        let mut item = MenuItem::new_radio_item(id, label, name, Some(accelerator), checked, disabled, None);
+        item.menu_window_handle = self.menu.window_handle;
+        self.items.push(item);
+        self
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn radio_with_icon(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
+        let mut item = MenuItem::new_radio_item(id, label, name, accelerator, checked, disabled, Some(icon));
         item.menu_window_handle = self.menu.window_handle;
         self.items.push(item);
         self
@@ -223,19 +245,19 @@ impl MenuBuilder {
         let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
         builder.menu_type = MenuType::Submenu;
 
-        // Set dummy menu to be replaced later
+        /* Set dummy menu to be replaced later */
         item.submenu = Some(builder.menu.clone());
         self.items.push(item);
 
         builder
     }
 
-    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, icon: std::path::PathBuf) -> Self {
+    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, icon: PathBuf) -> Self {
         let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, Some(icon));
         let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
         builder.menu_type = MenuType::Submenu;
 
-        // Set dummy menu to be replaced later
+        /* Set dummy menu to be replaced later */
         item.submenu = Some(builder.menu.clone());
         self.items.push(item);
 
@@ -295,10 +317,20 @@ impl MenuBuilder {
         }
 
         let dc_render_target = create_render_target();
-        let check_svg_doc = create_check_svg(&dc_render_target, &self.config.font);
-        let submenu_svg_doc = create_submenu_svg(&dc_render_target, &self.config.font);
 
-        let icon_space = get_icon_space(&self.items, &check_svg_doc, &submenu_svg_doc);
+        let check_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().check_svg {
+            create_svg_from_path(&dc_render_target, svg)
+        } else {
+            create_check_svg(&dc_render_target, &self.config)
+        };
+
+        let submenu_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().arrow_svg {
+            create_svg_from_path(&dc_render_target, svg)
+        } else {
+            create_submenu_svg(&dc_render_target, &self.config)
+        };
+
+        let icon_space = get_icon_space(&self.items, self.config.icon.as_ref().unwrap(), &check_svg_doc, &submenu_svg_doc);
         let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
 
         if is_main_menu {
@@ -308,7 +340,7 @@ impl MenuBuilder {
         let mut icon_map = HashMap::new();
         for item in &self.items {
             if let Some(icon) = &item.icon {
-                let bitmap = create_menu_image(&dc_render_target, icon, icon_space.left.width);
+                let bitmap = create_menu_image(&dc_render_target, icon, icon_space.mid.width);
                 icon_map.insert(item.uuid, bitmap);
             }
         }

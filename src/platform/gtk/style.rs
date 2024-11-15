@@ -1,6 +1,6 @@
-use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner};
-
 use super::{Config, Theme};
+use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner};
+use std::path::PathBuf;
 
 const CORNER_RADIUS: i32 = 8;
 const SEPARATOR_MARGIN: i32 = 5;
@@ -135,6 +135,36 @@ pub(crate) fn get_menu_css(config: &Config) -> String {
 
 pub(crate) fn get_menu_item_css(config: &Config) -> String {
     let weight = to_font_weight(config.font.dark_font_weight);
+    let icon_margin = if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+        format!(
+            r#"
+                margin-right: {margin}px;
+                margin-left: {margin}px;
+            "#,
+        )
+    } else {
+        String::new()
+    };
+    let check = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
+        format!(
+            r#"
+                -gtk-icon-source: -gtk-recolor(url("{}"));
+            "#,
+            svg.path.to_string_lossy()
+        )
+    } else {
+        String::new()
+    };
+    let arrow = if let Some(svg) = &config.icon.as_ref().unwrap().arrow_svg {
+        format!(
+            r#"
+                -gtk-icon-source: -gtk-recolor(url("{}"));
+            "#,
+            svg.path.to_string_lossy(),
+        )
+    } else {
+        String::new()
+    };
 
     format!(
         r#"
@@ -168,6 +198,11 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
                 border-width: 0px;
                 outline-width: 0px;
             }}
+            menuitem#{DARK_WIDGET_NAME} check:checked,
+            menuitem#{LIGHT_WIDGET_NAME} check:checked{{
+                {}
+                {}
+            }}
             menuitem#{DARK_WIDGET_NAME} check {{
                 color: {};
                 background-color: {};
@@ -183,6 +218,11 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
                 background-color: {};
             }}
 
+            menuitem#{DARK_WIDGET_NAME} arrow,
+            menuitem#{LIGHT_WIDGET_NAME} arrow {{
+                {}
+                {}
+            }}
             menu#{DARK_WIDGET_NAME} menuitem#{DARK_WIDGET_NAME} arrow {{
                 color: {};
                 background-color: {};
@@ -226,33 +266,38 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             menuitem#{LIGHT_WIDGET_NAME}:disabled, menu#{LIGHT_WIDGET_NAME} menuitem#{LIGHT_WIDGET_NAME}:disabled check, menu#{LIGHT_WIDGET_NAME} menuitem#{LIGHT_WIDGET_NAME}:disabled arrow {{
                 color: {};
             }}
+
         "#,
-        // accelerator
+        /* accelerator */
         config.font.dark_font_size,
         config.font.font_family,
         weight,
         to_rgba_string(config.color.dark.accelerator),
         to_rgba_string(config.color.light.accelerator),
-        // separator
+        /* separator */
         to_rgba_string(config.color.dark.separator),
         to_rgba_string(config.color.light.separator),
-        // check
+        /* check */
+        check,
+        icon_margin,
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
         to_rgba_string(config.color.light.background_color),
-        // check hover
+        /* check hover */
         to_rgba_string(config.color.dark.hover_background_color),
         to_rgba_string(config.color.light.hover_background_color),
-        // arrow
+        /* arrow */
+        arrow,
+        icon_margin,
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
         to_rgba_string(config.color.light.background_color),
-        // arrow hover
+        /* arrow hover */
         to_rgba_string(config.color.dark.hover_background_color),
         to_rgba_string(config.color.light.hover_background_color),
-        // item
+        /* item */
         config.size.item_horizontal_padding,
         config.size.item_horizontal_padding,
         config.size.item_vertical_padding,
@@ -266,22 +311,25 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
     )
 }
 
-pub(crate) fn get_icon_menu_css(icon: &Option<std::path::PathBuf>) -> String {
-    if let Some(icon) = icon {
-        let url = icon.to_string_lossy();
+pub(crate) fn get_icon_menu_css(icon: &PathBuf, icon_margin: Option<i32>) -> String {
+    let url = icon.to_string_lossy();
+    if let Some(margin) = icon_margin {
         format!(
             r#"
-                menuitem check {{
-                    -gtk-icon-source: -gtk-recolor(url("{url}"))
+                menuitem image {{
+                    background-image:-gtk-recolor(url("{url}"));
+                    margin-left: {margin}px;
+                    margin-right: {margin}px;
                 }}
             "#
         )
     } else {
-        r#"
-            menuitem check {
-                -gtk-icon-source: none;
-            }
-        "#
-        .to_string()
+        format!(
+            r#"
+                menuitem image {{
+                    background-image:-gtk-recolor(url("{url}"));
+                }}
+            "#
+        )
     }
 }

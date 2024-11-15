@@ -1,3 +1,4 @@
+use super::{FontWeight, MenuData, MenuItem};
 use gtk::{
     ffi::{GtkAccelGroup, GtkMenu, GtkMenuItem, GtkWindow},
     glib::{
@@ -7,8 +8,6 @@ use gtk::{
     prelude::GtkSettingsExt,
     AccelGroup, Widget,
 };
-
-use super::{FontWeight, MenuData, MenuItem};
 
 pub(crate) fn get_menu_data<'a>(gtk_menu_handle: isize) -> &'a MenuData {
     let menu = to_menu(gtk_menu_handle);

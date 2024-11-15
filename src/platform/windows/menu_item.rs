@@ -6,7 +6,10 @@ use super::{
 };
 use crate::MenuItemType;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicU16, Ordering},
+};
 
 static UUID: AtomicU16 = AtomicU16::new(0);
 
@@ -21,7 +24,7 @@ pub struct MenuItem {
     pub submenu: Option<Menu>,
     pub checked: bool,
     pub disabled: bool,
-    pub icon: Option<std::path::PathBuf>,
+    pub icon: Option<PathBuf>,
     pub uuid: u16,
     pub index: i32,
     pub(crate) menu_window_handle: isize,
@@ -44,7 +47,7 @@ impl MenuItem {
         disabled: Option<bool>,
         menu_item_type: MenuItemType,
         submenu: Option<Menu>,
-        icon: Option<std::path::PathBuf>,
+        icon: Option<PathBuf>,
     ) -> Self {
         Self {
             id: id.to_string(),
@@ -82,33 +85,30 @@ impl MenuItem {
         set_menu_data(self.menu_window_handle, data);
     }
 
-    pub fn set_icon(&mut self, icon: Option<std::path::PathBuf>) {
-        match self.menu_item_type {
-            MenuItemType::Text | MenuItemType::Submenu => {
-                self.icon = icon;
-                let data = get_menu_data_mut(self.menu_window_handle);
-
-                if data.items[self.index as usize].icon.is_some() {
-                    let _ = data.icon_map.remove(&self.uuid);
-                }
-
-                if let Some(icon) = &self.icon {
-                    let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
-                    data.icon_map.insert(self.uuid, bitmap);
-                }
-
-                data.items[self.index as usize].icon.clone_from(&self.icon);
-
-                recalculate(data);
-                set_menu_data(self.menu_window_handle, data);
-            }
-            _ => {}
+    pub fn set_icon(&mut self, icon: Option<PathBuf>) {
+        if self.menu_item_type == MenuItemType::Separator {
+            return;
         }
+
+        self.icon = icon;
+        let data = get_menu_data_mut(self.menu_window_handle);
+
+        data.icon_map.remove(&self.uuid);
+
+        if let Some(icon) = &self.icon {
+            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
+            data.icon_map.insert(self.uuid, bitmap);
+        }
+
+        data.items[self.index as usize].icon.clone_from(&self.icon);
+
+        recalculate(data);
+        set_menu_data(self.menu_window_handle, data);
     }
 }
 
 impl MenuItem {
-    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
+    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -132,7 +132,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_check_item(id: &str, label: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>) -> Self {
+    pub fn new_check_item(id: &str, label: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -150,11 +150,11 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
-            icon: None,
+            icon,
         }
     }
 
-    pub fn new_radio_item(id: &str, label: &str, name: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>) -> Self {
+    pub fn new_radio_item(id: &str, label: &str, name: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -172,7 +172,7 @@ impl MenuItem {
             checked,
             disabled: disabled.unwrap_or(false),
             items: None,
-            icon: None,
+            icon,
         }
     }
 
@@ -191,11 +191,13 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>, icon: Option<std::path::PathBuf>) -> Self {
+    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
         let mut item = MenuItem::new(0, id, label, "", "", false, disabled, MenuItemType::Submenu, None, icon);
         item.items = Some(Vec::new());
         item
     }
+
+    /// Adds a menu item to submenu.
     pub fn add_menu_item(&mut self, item: MenuItem) -> &Self {
         if let Some(items) = self.items.as_mut() {
             items.push(item);

@@ -3,8 +3,7 @@ mod builder;
 mod direct2d;
 mod menu_item;
 mod util;
-use crate::{config::*, InnerMenuEvent};
-use crate::{MenuEvent, MenuItemType, MenuType, ThemeChangeFactor};
+use crate::{config::*, InnerMenuEvent, MenuEvent, MenuItemType, MenuType, ThemeChangeFactor};
 #[cfg(feature = "accelerator")]
 use accelerator::{create_haccel, destroy_haccel, translate_accel};
 pub use builder::*;
@@ -27,8 +26,8 @@ use windows::{
             Direct2D::{Common::D2D_POINT_2F, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT},
             DirectWrite::{DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_ALIGNMENT_TRAILING},
             Gdi::{
-                BeginPaint, ClientToScreen, EndPaint, GetMonitorInfoW, GetWindowDC, InvalidateRect, MonitorFromPoint, MonitorFromWindow, OffsetRect, PtInRect, ReleaseDC, ScreenToClient, UpdateWindow,
-                HBRUSH, HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT,
+                BeginPaint, ClientToScreen, EndPaint, GetMonitorInfoW, GetWindowDC, InvalidateRect, MonitorFromPoint, MonitorFromWindow, PtInRect, ReleaseDC, ScreenToClient, UpdateWindow, HBRUSH,
+                HDC, MONITORINFO, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTONULL, PAINTSTRUCT,
             },
         },
         System::{
@@ -55,7 +54,7 @@ use windows::{
 };
 
 const HOOK_PROP_NAME: &str = "WCPOPUP_KEYBOARD_HOOK";
-// https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/geometry
+/* https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/geometry */
 const CORNER_RADIUS: i32 = 8;
 const SHOW_SUBMENU_TIMER_ID: usize = 500;
 const HIDE_SUBMENU_TIMER_ID: usize = 501;
@@ -90,13 +89,15 @@ pub(crate) struct Size {
 #[derive(Default, Clone, Copy, Debug)]
 pub(crate) struct IconSpace {
     left: IconSize,
+    mid: IconSize,
     right: IconSize,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
 pub(crate) struct IconSize {
     width: i32,
-    margins: i32,
+    lmargin: i32,
+    rmargin: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -163,28 +164,16 @@ impl Menu {
     }
 
     /// Adds a MenuItem to the end of MenuItems.
-    pub fn append(&mut self, mut item: MenuItem) {
-        if item.menu_item_type == MenuItemType::Submenu {
-            self.create_submenu(&mut item);
-        }
-
-        #[cfg(feature = "accelerator")]
-        self.reset_haccel(&item, false);
-
-        let data = get_menu_data_mut(self.window_handle);
-        item.menu_window_handle = self.window_handle;
-        refresh_menu_icon(data, &item, false);
-        // Add before recalc
-        data.items.push(item);
-        recalculate(data);
-
-        Self::reset_radio(data, data.items.last().unwrap().clone());
-
-        set_menu_data(self.window_handle, data);
+    pub fn append(&mut self, item: MenuItem) {
+        self.add_item(item, None);
     }
 
     /// Adds a MenuItem at the specified index.
-    pub fn insert(&mut self, mut item: MenuItem, index: u32) {
+    pub fn insert(&mut self, item: MenuItem, index: u32) {
+        self.add_item(item, Some(index as usize));
+    }
+
+    fn add_item(&mut self, mut item: MenuItem, index: Option<usize>) {
         if item.menu_item_type == MenuItemType::Submenu {
             self.create_submenu(&mut item);
         }
@@ -195,11 +184,21 @@ impl Menu {
         let data = get_menu_data_mut(self.window_handle);
         item.menu_window_handle = self.window_handle;
         refresh_menu_icon(data, &item, false);
-        // Add before recalc
-        data.items.insert(index as usize, item);
+
+        /* Add before recalc */
+        if let Some(index) = index {
+            data.items.insert(index, item);
+        } else {
+            data.items.push(item);
+        }
+
         recalculate(data);
 
-        Self::reset_radio(data, data.items[index as usize].clone());
+        if let Some(index) = index {
+            Self::reset_radio(data, data.items[index].clone());
+        } else {
+            Self::reset_radio(data, data.items.last().unwrap().clone());
+        }
 
         set_menu_data(self.window_handle, data);
     }
@@ -210,9 +209,9 @@ impl Menu {
         item.submenu = Some(memnu);
     }
 
-    fn reset_radio(data: &mut MenuData, item: MenuItem) {
-        if item.menu_item_type == MenuItemType::Radio && item.checked {
-            toggle_radio(data, item.index as usize);
+    fn reset_radio(data: &mut MenuData, new_item: MenuItem) {
+        if new_item.menu_item_type == MenuItemType::Radio && new_item.checked {
+            toggle_radio(data, new_item.index as usize);
         }
     }
 
@@ -322,17 +321,17 @@ impl Menu {
             let _ = unsafe { AttachThreadInput(current_thread_id, menu_thread_id, true) };
         }
 
-        // Activate parent window
+        /* Activate parent window */
         let _ = unsafe { SetForegroundWindow(parent) };
         let _ = unsafe { SetActiveWindow(parent) };
 
         let pt = get_display_point(self.window_handle, x, y, size.width, size.height);
         let _ = unsafe { SetWindowPos(hwnd, HWND_TOP, pt.x, pt.y, size.width, size.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
 
-        // Set menu hwnd to property to be used in keyboard hook
+        /* Set menu hwnd to property to be used in keyboard hook */
         unsafe { SetPropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr()), HANDLE(self.window_handle as _)).unwrap() };
 
-        // Set hooks
+        /* Set hooks */
         let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, menu_thread_id).unwrap() };
         let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook), None, menu_thread_id).unwrap() };
 
@@ -353,10 +352,8 @@ impl Menu {
     /// Shows Menu at the specified point.
     pub fn popup_at(&self, x: i32, y: i32) {
         let data = get_menu_data(self.window_handle);
-        // Prepare
         self.start_popup(x, y, data.size, false);
 
-        // Show menu window
         animate_show_window(self.window_handle);
         set_capture(self.window_handle);
     }
@@ -364,10 +361,8 @@ impl Menu {
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<MenuItem> {
         let data = get_menu_data(self.window_handle);
-        // Prepare
         self.start_popup(x, y, data.size, true);
 
-        // Show menu window
         animate_show_window(self.window_handle);
         set_capture(self.window_handle);
 
@@ -391,8 +386,9 @@ fn refresh_menu_icon(data: &mut MenuData, item: &MenuItem, should_remove: bool) 
         }
     }
 }
+
 fn recalculate(data: &mut MenuData) {
-    data.icon_space = get_icon_space(&data.items, &data.check_svg, &data.submenu_svg);
+    data.icon_space = get_icon_space(&data.items, data.config.icon.as_ref().unwrap(), &data.check_svg, &data.submenu_svg);
     data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
 }
 
@@ -400,9 +396,9 @@ fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: 
     let mut width = 0;
     let mut height = 0;
 
-    // Add padding
+    /* Add padding */
     height += config.size.vertical_padding;
-    // Add border size
+    /* Add border size */
     height += config.size.border_size;
 
     if config.corner == Corner::Round {
@@ -410,7 +406,7 @@ fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: 
     }
 
     let factory = create_write_factory();
-    // Calculate item top, left, bottom and menu size
+    /* Calculate item top, left, bottom and menu size */
     for (index, item) in items.iter_mut().enumerate() {
         item.index = index as i32;
 
@@ -423,12 +419,12 @@ fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: 
         height += item_height;
     }
 
-    // Calculate item right
+    /* Calculate item right */
     for item in items {
         item.right = item.left + width;
     }
 
-    // Add padding
+    /* Add padding */
     width += config.size.horizontal_padding * 2;
     height += config.size.vertical_padding;
 
@@ -436,7 +432,7 @@ fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: 
         height += CORNER_RADIUS;
     }
 
-    // Add border size
+    /* Add border size */
     width += config.size.border_size * 2;
     height += config.size.border_size;
 
@@ -454,7 +450,7 @@ fn animate_show_window(window_handle: isize) {
 
 fn set_capture(window_handle: isize) {
     let hwnd = hw!(window_handle);
-    // Prevent mouse input on window beneath menu
+    /* Prevent mouse input on window beneath menu */
     unsafe { SetCapture(hwnd) };
 
     let cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
@@ -462,7 +458,7 @@ fn set_capture(window_handle: isize) {
 }
 
 unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    // Prevent keyboard input while Menu is open
+    /* Prevent keyboard input while Menu is open */
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
         let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
@@ -480,7 +476,7 @@ unsafe extern "system" fn mouse_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM)
         let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
 
         match wparam.0 as u32 {
-            // Do not direct buttondown event since it is sent to default_window_proc
+            /* Do not direct buttondown event since it is sent to default_window_proc */
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONUP => {}
             _ => {
                 let _ = unsafe { PostMessageW(HWND(data.0), wparam.0 as u32, WPARAM(0), LPARAM(0)) };
@@ -635,23 +631,23 @@ fn on_mouse_move(window: HWND) {
     let should_show_submenu = change_selection(data, vtoi!(window.0), pt);
     set_menu_data(vtoi!(window.0), data);
 
-    // Show submenu after submenu index is stored
+    /* Show submenu after submenu index is stored */
     if should_show_submenu {
         show_submenu(window);
     }
 }
 
 fn on_mouse_down(window: HWND, msg: u32) {
-    // If mouse input occurs outside of menu
+    /* If mouse input occurs outside of menu */
     if get_hwnd_from_point(window).is_none() {
-        // Immediately release capture so that the event is sent to the target window
+        /* Immediately release capture so that the event is sent to the target window */
         let _ = unsafe { ReleaseCapture() };
 
-        // Close menu
+        /* Close menu */
         init_menu_data(vtoi!(window.0));
         post_message(None);
 
-        // If mouse input occurs on parent window, send mouse input
+        /* If mouse input occurs on parent window, send mouse input */
         send_mouse_input(window, msg);
     }
 }
@@ -694,22 +690,22 @@ fn post_message(menu_item: Option<&MenuItem>) {
 }
 
 fn on_menu_item_selected(data: &mut MenuData, index: usize) -> bool {
-    // If submenu, ignore
+    /* Ignore submenu */
     if data.items[index].menu_item_type == MenuItemType::Submenu {
         return false;
     }
 
-    // If disabled, ignore
+    /* Ignore disabled */
     if data.items[index].disabled {
         return false;
     }
 
-    // toggle radio checkbox
+    /* Toggle radio checkbox */
     if data.items[index].menu_item_type == MenuItemType::Radio {
         toggle_radio(data, index);
     }
 
-    // toggle checkbox
+    /* Toggle checkbox */
     if data.items[index].menu_item_type == MenuItemType::Checkbox {
         data.items[index].checked = !data.items[index].checked;
     }
@@ -802,7 +798,7 @@ fn finish_popup(info: &PopupInfo) {
 
     let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(encode_wide(HOOK_PROP_NAME).as_ptr())) };
 
-    // Unhook hooks
+    /* Unhook hooks */
     let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as _)) };
     let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.mouse_hook as _)) };
 
@@ -969,7 +965,7 @@ fn paint(dc: HDC, data: &MenuData, items: &Vec<MenuItem>) -> Result<(), Error> {
 
         match item.menu_item_type {
             MenuItemType::Separator => {
-                // Use whole item rect to draw from left to right
+                /* Use whole item rect to draw from left to right */
                 draw_separator(data, &whole_item_rect, scheme)?;
             }
 
@@ -1015,12 +1011,90 @@ fn fill_background(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, sele
     Ok(())
 }
 
-fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    // Keep space for check mark and submenu mark
-    let text_rect = RECT {
-        left: item_rect.left + (data.icon_space.left.width + data.icon_space.left.margins),
+fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    let space = data.icon_space.left;
+    let check_rect = RECT {
+        left: item_rect.left + space.lmargin,
         top: item_rect.top,
-        right: item_rect.right - (data.icon_space.right.width + data.icon_space.right.margins),
+        right: item_rect.left + space.lmargin + space.width + space.rmargin,
+        bottom: item_rect.top + space.width,
+    };
+
+    let color = if disabled {
+        scheme.disabled
+    } else {
+        scheme.color
+    };
+
+    let dc5 = get_device_context(&data.dc_render_target);
+
+    let element = unsafe { data.check_svg.GetRoot() }?;
+    set_fill_color(&element, color);
+    set_stroke_color(&element, color);
+
+    /* center vertically */
+    let top = check_rect.top + (((item_rect.bottom - item_rect.top) - (check_rect.bottom - check_rect.top)) / 2);
+    let translation = Matrix3x2::translation(check_rect.left as f32, top as f32);
+    unsafe { dc5.SetTransform(&translation) };
+    unsafe { dc5.DrawSvgDocument(&data.check_svg) };
+    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+
+    Ok(())
+}
+
+fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    let space = data.icon_space.mid;
+    let check_margin = data.icon_space.left.lmargin + data.icon_space.left.width + data.icon_space.left.rmargin;
+    let mut icon_rect = RECT {
+        left: item_rect.left + check_margin + space.lmargin,
+        top: item_rect.top,
+        right: item_rect.left + check_margin + space.lmargin + space.width + space.rmargin,
+        bottom: item_rect.top + space.width,
+    };
+
+    match data.icon_map.get(&item.uuid).unwrap() {
+        MenuImage::Bitmap(bitmap) => {
+            icon_rect.right = icon_rect.left + data.icon_space.mid.width;
+            unsafe { data.dc_render_target.DrawBitmap(bitmap, Some(&to_2d_rect(&icon_rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, None) };
+        }
+        MenuImage::Svg(svg) => {
+            let dc5 = get_device_context(&data.dc_render_target);
+            let color = if disabled {
+                scheme.disabled
+            } else {
+                scheme.color
+            };
+            let element = unsafe { svg.GetRoot() }?;
+            set_fill_color(&element, color);
+            let translation = Matrix3x2::translation(icon_rect.left as f32, icon_rect.top as f32);
+            unsafe { dc5.SetTransform(&translation) };
+            unsafe { dc5.DrawSvgDocument(svg) };
+            unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+        }
+    }
+
+    Ok(())
+}
+
+fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    /* Keep space for check, icon and submenu */
+    let check_margin = data.icon_space.left.lmargin + data.icon_space.left.width + data.icon_space.left.rmargin;
+    /*
+        Use icon margin if
+        - Menu has no check item but has any icon item
+        - reserve_icon_size is true
+        - This item has icon
+    */
+    let icon_margin = if (check_margin == 0 && !data.icon_map.is_empty()) || data.config.icon.as_ref().unwrap().reserve_icon_size || item.icon.is_some() {
+        data.icon_space.mid.width + data.icon_space.mid.lmargin + data.icon_space.mid.rmargin
+    } else {
+        0
+    };
+    let arrow_margin = data.icon_space.right.lmargin + data.icon_space.right.width + data.icon_space.right.rmargin;
+    let text_rect = RECT {
+        left: item_rect.left + check_margin + icon_margin,
+        top: item_rect.top,
+        right: item_rect.right - arrow_margin,
         bottom: item_rect.bottom,
     };
 
@@ -1051,84 +1125,16 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
     Ok(())
 }
 
-fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.icon_space.left.margins / 2;
-    let icon_width = data.icon_space.left.width;
-    let mut check_rect = RECT {
-        left: item_rect.left + margin,
-        top: item_rect.top,
-        right: item_rect.left + margin + icon_width + margin,
-        bottom: item_rect.top + icon_width,
-    };
-
-    // center vertically
-    let _ = unsafe { OffsetRect(&mut check_rect, 0, ((item_rect.bottom - item_rect.top) - (check_rect.bottom - check_rect.top)) / 2) };
-
-    let color = if disabled {
-        scheme.disabled
-    } else {
-        scheme.color
-    };
-
-    let dc5 = get_device_context(&data.dc_render_target);
-
-    let element = unsafe { data.check_svg.GetRoot() }?;
-    set_fill_color(&element, color);
-    set_stroke_color(&element, color);
-
-    let translation = Matrix3x2::translation(check_rect.left as f32, check_rect.top as f32);
-    unsafe { dc5.SetTransform(&translation) };
-    unsafe { dc5.DrawSvgDocument(&data.check_svg) };
-    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
-
-    Ok(())
-}
-
-fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.icon_space.left.margins / 2;
-    let icon_width = data.icon_space.left.width;
-    let icon_rect = RECT {
-        left: item_rect.left + margin,
-        top: item_rect.top,
-        right: item_rect.left + icon_width + margin,
-        bottom: item_rect.top + icon_width,
-    };
-
-    match data.icon_map.get(&item.uuid).unwrap() {
-        MenuImage::Bitmap(bitmap) => {
-            unsafe { data.dc_render_target.DrawBitmap(bitmap, Some(&to_2d_rect(&icon_rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, None) };
-        }
-        MenuImage::Svg(svg) => {
-            let dc5 = get_device_context(&data.dc_render_target);
-            let color = if disabled {
-                scheme.disabled
-            } else {
-                scheme.color
-            };
-            let element = unsafe { svg.GetRoot() }?;
-            set_fill_color(&element, color);
-            let translation = Matrix3x2::translation(icon_rect.left as f32, icon_rect.top as f32);
-            unsafe { dc5.SetTransform(&translation) };
-            unsafe { dc5.DrawSvgDocument(svg) };
-            unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
-        }
-    }
-
-    Ok(())
-}
-
 fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.icon_space.right.margins / 2;
+    let margin = data.icon_space.right.lmargin;
     let icon_width = data.icon_space.right.width;
-    let mut arrow_rect = RECT {
+    let arrow_rect = RECT {
         left: item_rect.right - (margin + icon_width),
         top: item_rect.top,
         right: item_rect.right - margin,
         bottom: item_rect.top + icon_width,
     };
 
-    // center vertically
-    let _ = unsafe { OffsetRect(&mut arrow_rect as *mut _, 0, ((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2) };
     let color = if disabled {
         scheme.disabled
     } else {
@@ -1141,7 +1147,9 @@ fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, d
     set_fill_color(&element, color);
     set_stroke_color(&element, color);
 
-    let translation = Matrix3x2::translation(arrow_rect.left as f32, arrow_rect.top as f32);
+    /* center vertically */
+    let top = arrow_rect.top + (((item_rect.bottom - item_rect.top) - (arrow_rect.bottom - arrow_rect.top)) / 2);
+    let translation = Matrix3x2::translation(arrow_rect.left as f32, top as f32);
     unsafe { dc5.SetTransform(&translation) };
     unsafe { dc5.DrawSvgDocument(&data.submenu_svg) };
     unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
@@ -1160,7 +1168,7 @@ fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<
 
     let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None).unwrap() };
 
-    // Add 0.5 to disable antialiasing for line
+    /* Add 0.5 to disable antialiasing for line */
     unsafe {
         data.dc_render_target.DrawLine(
             D2D_POINT_2F {
@@ -1231,7 +1239,7 @@ fn get_display_point(window_handle: isize, x: i32, y: i32, cx: i32, cy: i32) -> 
 
 fn change_selection(data: &mut MenuData, window_handle: isize, screen_point: POINT) -> bool {
     let hwnd = hw!(window_handle);
-    // Menu is yet to be visible due to timer or animation
+    /* Menu is yet to be visible due to timer or animation */
     if unsafe { !IsWindowVisible(hwnd) }.as_bool() {
         return false;
     }
@@ -1311,7 +1319,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         let submenu_window_handle = item.submenu.as_ref().unwrap().window_handle;
         let submenu_data = get_menu_data(submenu_window_handle);
 
-        // If submenu has no item, do not show submenu
+        /* If submenu has no item, do not show submenu */
         if submenu_data.items.is_empty() {
             return;
         }
@@ -1338,10 +1346,10 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
                 y: item.bottom - submenu_data.size.height,
             };
             let _ = ClientToScreen(hwnd, &mut reversed_point);
-            // Add top/bottom padding, round corner size, and border size
+            /* Add top/bottom padding, round corner size, and border size */
             reversed_point.y + main_menu_data.config.size.vertical_padding * 2 + round_corner_size + main_menu_data.config.size.border_size
         } else {
-            // Reduce top padding and border size
+            /* Reduce top padding and border size */
             main_menu_rect.top + item.top - main_menu_data.config.size.vertical_padding - round_corner_size - main_menu_data.config.size.border_size
         };
 
@@ -1452,7 +1460,7 @@ fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, f
 
     let current_them = data.current_theme;
 
-    // Don't respont to setting change event unless theme is System
+    /* Don't respont to setting change event unless theme is System */
     if current_them != Theme::System && factor == ThemeChangeFactor::SystemSetting {
         return;
     }

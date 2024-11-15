@@ -1,8 +1,7 @@
-use crate::MenuItemType;
-
 #[cfg(feature = "accelerator")]
 use super::to_gtk_window;
 use super::{get_menu_data, to_accel_group, to_menu_item, MenuItem};
+use crate::MenuItemType;
 #[cfg(feature = "accelerator")]
 use gtk::{
     accelerator_name,
@@ -64,7 +63,7 @@ pub(crate) fn add_accelerators_from_menu_item(gtk_menu_handle: isize, item: &Men
     let mut accelerators = HashMap::new();
 
     for item in item_with_accel {
-        accelerators.insert(item.gtk_menu_item, item.accelerator.clone());
+        accelerators.insert(item.gtk_menu_item_handle, item.accelerator.clone());
     }
 
     add_accelerator(gtk_menu_handle, &accelerators);

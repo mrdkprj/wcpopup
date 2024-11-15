@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
@@ -19,9 +20,10 @@ pub struct Config {
     pub theme: Theme,
     pub size: MenuSize,
     pub color: ThemeColor,
-    /// On Windows, effective starting with Windows 11 Build 22000
+    /// On Windows, effective starting with Windows 11 Build 22000.
     pub corner: Corner,
     pub font: MenuFont,
+    pub icon: Option<Icon>,
 }
 
 impl Default for Config {
@@ -32,6 +34,7 @@ impl Default for Config {
             color: ThemeColor::default(),
             corner: Corner::Round,
             font: MenuFont::default(),
+            icon: Some(Icon::default()),
         }
     }
 }
@@ -210,6 +213,26 @@ pub enum FontWeight {
     Bold,
 }
 
+/// Icon settings.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Icon {
+    /// SVG to override the default check-mark SVG for check/radio menu item.
+    pub check_svg: Option<MenuSVG>,
+    /// SVG to override the default arrow SVG for submenu item.
+    pub arrow_svg: Option<MenuSVG>,
+    /// Whether to reserve space for icons regardless of their actual presence.
+    pub reserve_icon_size: bool,
+    /// Left and right margins of the icons set to menu items.
+    pub horizontal_margin: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MenuSVG {
+    pub path: PathBuf,
+    pub width: i32,
+    pub height: i32,
+}
+
 #[derive(Debug)]
 pub struct RGBA {
     pub r: u32,
@@ -236,10 +259,10 @@ pub(crate) fn to_rgba_string(color: u32) -> String {
 /// RGBA from hex value.
 pub fn rgba_from_hex(color: u32) -> RGBA {
     if has_alpha(color) {
-        let r = (color >> 24) & 0xFF; // Shift right by 24 bits, mask the last 8 bits
-        let g = (color >> 16) & 0xFF; // Shift right by 16 bits, mask the last 8 bits
-        let b = (color >> 8) & 0xFF; // Shift right by 8 bits, mask the last 8 bits
-        let a = (color & 0xFF) as f32 / 255.0; // Extract alpha and normalize to [0.0, 1.0]
+        let r = (color >> 24) & 0xFF; /* Shift right by 24 bits, mask the last 8 bits */
+        let g = (color >> 16) & 0xFF; /* Shift right by 16 bits, mask the last 8 bits */
+        let b = (color >> 8) & 0xFF; /* Shift right by 8 bits, mask the last 8 bits */
+        let a = (color & 0xFF) as f32 / 255.0; /* Extract alpha and normalize to [0.0, 1.0] */
         RGBA {
             r,
             g,
@@ -247,8 +270,8 @@ pub fn rgba_from_hex(color: u32) -> RGBA {
             a,
         }
     } else {
-        let r = (color >> 16) & 0xFF; // Shift right by 16 bits, mask the last 8 bits
-        let g = (color >> 8) & 0xFF; // Shift right by 8 bits, mask the last 8 bits
+        let r = (color >> 16) & 0xFF; /* Shift right by 16 bits, mask the last 8 bits */
+        let g = (color >> 8) & 0xFF; /* Shift right by 8 bits, mask the last 8 bits */
         let b = color & 0xFF;
         RGBA {
             r,
@@ -260,7 +283,7 @@ pub fn rgba_from_hex(color: u32) -> RGBA {
 }
 
 fn has_alpha(value: u32) -> bool {
-    // If the value is larger than 24 bits, it contains alpha.
+    /* If the value is larger than 24 bits, it contains alpha */
     value > 0xFFFFFF
 }
 

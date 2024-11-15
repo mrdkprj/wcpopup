@@ -96,7 +96,7 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
 
     match item_data.menu_item_type {
         MenuItemType::Separator => {
-            // separator - use half system height and zero width
+            /* separator - use half system height and zero width */
             height = unsafe { (GetSystemMetrics(SM_CYMENU) + 4) / 2 };
         }
 
@@ -116,9 +116,10 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
 
             width = metrics.width as i32;
             width += config.size.item_horizontal_padding * 2;
-            width += icon_space.left.width + icon_space.left.margins;
-            width += icon_space.right.width + icon_space.right.margins;
-            // extra padding
+            width += icon_space.left.width + icon_space.left.lmargin + icon_space.left.rmargin;
+            width += icon_space.mid.width + icon_space.mid.lmargin + icon_space.mid.rmargin;
+            width += icon_space.right.width + icon_space.right.lmargin + icon_space.right.rmargin;
+            /* extra padding for accelerator */
             if !item_data.accelerator.is_empty() {
                 width += 30;
             }

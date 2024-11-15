@@ -1,6 +1,6 @@
+use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, Icon, IconSize, IconSpace, MenuImage, MenuItem, MenuSVG, Theme};
 use crate::MenuItemType;
-
-use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, IconSize, IconSpace, MenuFont, MenuImage, MenuItem, Theme};
+use std::{fs, path::PathBuf};
 use windows::{
     core::{w, Error, Interface},
     Win32::{
@@ -22,19 +22,25 @@ use windows::{
                 CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
             },
         },
-        System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, STGM_READ},
-        UI::Shell::SHCreateStreamOnFileEx,
+        System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
+        UI::Shell::SHCreateMemStream,
     },
 };
 
-const MIN_LR_BUTTON_WIDTH: i32 = 12;
-const CHECK_BUTTON_MARGIN: i32 = 10;
-const ARROW_BUTTON_MARGIN: i32 = 5;
+const MIN_BUTTON_WIDTH: i32 = 6;
+const DEFAULT_ICON_MARGIN: i32 = 5;
 
 #[derive(PartialEq)]
 pub(crate) enum TextAlignment {
     Leading,
     Trailing,
+}
+
+enum LeftButton {
+    Check,
+    Icon,
+    CheckAndIcon,
+    None,
 }
 
 pub(crate) fn create_render_target() -> ID2D1DCRenderTarget {
@@ -77,7 +83,7 @@ fn font_point_to_pixel(font_point: f32) -> f32 {
     1.3 * font_point
 }
 
-pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFont) -> ID2D1SvgDocument {
+pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> ID2D1SvgDocument {
     let dc5 = get_device_context(target);
 
     let document = unsafe {
@@ -91,7 +97,7 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFon
         .unwrap()
     };
 
-    let font_size = font_point_to_pixel(menu_font.dark_font_size.max(menu_font.light_font_size));
+    let font_size = font_point_to_pixel(config.font.dark_font_size.max(config.font.light_font_size));
     let size = font_size.ceil();
     unsafe {
         document
@@ -133,74 +139,7 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFon
     document
 }
 
-pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, icon: &std::path::Path, size: i32) -> MenuImage {
-    let dc5 = get_device_context(target);
-    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-
-    let mut is_svg = false;
-    if let Some(extension) = icon.extension() {
-        is_svg = extension.eq_ignore_ascii_case("svg");
-    }
-
-    let image = if is_svg {
-        let svg_document = match unsafe { SHCreateStreamOnFileEx(to_pcwstr(icon), STGM_READ.0, 0, false, None) } {
-            Ok(stream) => unsafe {
-                dc5.CreateSvgDocument(
-                    &stream,
-                    D2D_SIZE_F {
-                        width: size as f32,
-                        height: size as f32,
-                    },
-                )
-                .unwrap()
-            },
-            Err(e) => unsafe {
-                println!("Failed to load SVG file:{:?}", e);
-                dc5.CreateSvgDocument(
-                    None,
-                    D2D_SIZE_F {
-                        width: 1.0,
-                        height: 1.0,
-                    },
-                )
-                .unwrap()
-            },
-        };
-
-        MenuImage::Svg(svg_document)
-    } else {
-        let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
-        let file_path = to_pcwstr(icon);
-        let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
-        let frame = unsafe { decoder.GetFrame(0).unwrap() };
-        let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
-        unsafe {
-            format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).unwrap();
-        }
-
-        let bitmap = unsafe {
-            dc5.CreateBitmapFromWicBitmap(
-                &format_converter,
-                Some(&D2D1_BITMAP_PROPERTIES1 {
-                    pixelFormat: D2D1_PIXEL_FORMAT {
-                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-                    },
-                    ..Default::default()
-                }),
-            )
-            .unwrap()
-        };
-
-        MenuImage::Bitmap(bitmap)
-    };
-
-    unsafe { CoUninitialize() };
-
-    image
-}
-
-pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuFont) -> ID2D1SvgDocument {
+pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) -> ID2D1SvgDocument {
     let dc5 = get_device_context(target);
 
     let document = unsafe {
@@ -214,7 +153,7 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuF
         .unwrap()
     };
 
-    let font_size = font_point_to_pixel(menu_font.dark_font_size.max(menu_font.light_font_size));
+    let font_size = font_point_to_pixel(config.font.dark_font_size.max(config.font.light_font_size));
     let size = (font_size * 0.625).ceil();
     unsafe {
         document
@@ -256,13 +195,93 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, menu_font: &MenuF
     document
 }
 
+pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, icon: &PathBuf, size: i32) -> MenuImage {
+    let dc5 = get_device_context(target);
+
+    let mut is_svg = false;
+    if let Some(extension) = icon.extension() {
+        is_svg = extension.eq_ignore_ascii_case("svg");
+    }
+
+    if is_svg {
+        let svg_document = create_svg_from_path(
+            target,
+            &MenuSVG {
+                path: icon.clone(),
+                width: size,
+                height: size,
+            },
+        );
+        MenuImage::Svg(svg_document)
+    } else {
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+        let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
+        let file_path = to_pcwstr(icon);
+        let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
+        let frame = unsafe { decoder.GetFrame(0).unwrap() };
+        let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
+        unsafe {
+            format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).unwrap();
+        }
+
+        let bitmap = unsafe {
+            dc5.CreateBitmapFromWicBitmap(
+                &format_converter,
+                Some(&D2D1_BITMAP_PROPERTIES1 {
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                    },
+                    ..Default::default()
+                }),
+            )
+            .unwrap()
+        };
+
+        MenuImage::Bitmap(bitmap)
+    }
+}
+
+pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> ID2D1SvgDocument {
+    let dc5 = get_device_context(target);
+
+    let svg_data = fs::read(&svg.path).unwrap();
+
+    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+    match unsafe { SHCreateMemStream(Some(&svg_data)) } {
+        Some(stream) => unsafe {
+            dc5.CreateSvgDocument(
+                &stream,
+                D2D_SIZE_F {
+                    width: svg.width as f32,
+                    height: svg.height as f32,
+                },
+            )
+            .unwrap()
+        },
+        None => unsafe {
+            println!("Failed to load SVG file:{:?}", svg.path);
+            dc5.CreateSvgDocument(
+                None,
+                D2D_SIZE_F {
+                    width: 1.0,
+                    height: 1.0,
+                },
+            )
+            .unwrap()
+        },
+    }
+}
+
 pub(crate) fn get_text_format(factory: &IDWriteFactory, theme: Theme, config: &Config, alignment: TextAlignment) -> Result<IDWriteTextFormat, Error> {
     let current_theme = get_current_theme(theme);
 
     let (font_size, font_weight_value) = match current_theme {
         Theme::Dark => (config.font.dark_font_size, config.font.dark_font_weight),
         Theme::Light => (config.font.light_font_size, config.font.light_font_weight),
-        // get_current_theme never returns System,
+        /* get_current_theme never returns System */
         Theme::System => (0.0, FontWeight::Normal),
     };
 
@@ -319,7 +338,7 @@ pub(crate) fn colorref_to_d2d1_color_f(color: u32) -> D2D1_COLOR_F {
     }
 }
 
-pub(crate) fn get_icon_space(items: &[MenuItem], check_svg: &ID2D1SvgDocument, submenu_svg: &ID2D1SvgDocument) -> IconSpace {
+pub(crate) fn get_icon_space(items: &[MenuItem], icon_config: &Icon, check_svg: &ID2D1SvgDocument, submenu_svg: &ID2D1SvgDocument) -> IconSpace {
     if items.is_empty() {
         return IconSpace::default();
     }
@@ -327,31 +346,73 @@ pub(crate) fn get_icon_space(items: &[MenuItem], check_svg: &ID2D1SvgDocument, s
     let has_checkbox = items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
     let has_submenu = items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu);
     let has_icon = items.iter().any(|item| item.icon.is_some());
+    let left_button = if has_checkbox && has_icon {
+        LeftButton::CheckAndIcon
+    } else if has_checkbox {
+        LeftButton::Check
+    } else if has_icon {
+        LeftButton::Icon
+    } else {
+        LeftButton::None
+    };
 
     let check_svg_size = unsafe { check_svg.GetViewportSize().width } as i32;
     let submenu_svg_size = unsafe { submenu_svg.GetViewportSize().width } as i32;
 
+    let icon_margin = if let Some(margin) = icon_config.horizontal_margin {
+        MIN_BUTTON_WIDTH + margin
+    } else {
+        MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN
+    };
+
     let default_button_size = IconSize {
-        width: MIN_LR_BUTTON_WIDTH,
-        margins: MIN_LR_BUTTON_WIDTH,
+        width: MIN_BUTTON_WIDTH * 2,
+        lmargin: MIN_BUTTON_WIDTH,
+        rmargin: MIN_BUTTON_WIDTH,
+    };
+
+    let left = match left_button {
+        LeftButton::Check => IconSize {
+            width: check_svg_size,
+            lmargin: icon_margin,
+            rmargin: icon_margin,
+        },
+        LeftButton::CheckAndIcon => IconSize {
+            width: check_svg_size,
+            lmargin: icon_margin,
+            rmargin: icon_margin,
+        },
+        LeftButton::Icon => IconSize::default(),
+        LeftButton::None => default_button_size,
+    };
+
+    let mid = match left_button {
+        LeftButton::Icon => IconSize {
+            width: check_svg_size,
+            lmargin: icon_margin,
+            rmargin: icon_margin,
+        },
+        LeftButton::CheckAndIcon => IconSize {
+            width: check_svg_size,
+            lmargin: 0,
+            rmargin: icon_margin,
+        },
+        LeftButton::None | LeftButton::Check => IconSize::default(),
+    };
+
+    let right = if has_submenu {
+        IconSize {
+            width: submenu_svg_size,
+            lmargin: icon_margin,
+            rmargin: icon_margin,
+        }
+    } else {
+        default_button_size
     };
 
     IconSpace {
-        left: if has_checkbox | has_icon {
-            IconSize {
-                width: check_svg_size,
-                margins: MIN_LR_BUTTON_WIDTH + CHECK_BUTTON_MARGIN * 2,
-            }
-        } else {
-            default_button_size
-        },
-        right: if has_submenu {
-            IconSize {
-                width: submenu_svg_size,
-                margins: MIN_LR_BUTTON_WIDTH + ARROW_BUTTON_MARGIN * 2,
-            }
-        } else {
-            default_button_size
-        },
+        left,
+        mid,
+        right,
     }
 }
