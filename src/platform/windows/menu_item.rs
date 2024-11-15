@@ -72,6 +72,10 @@ impl MenuItem {
 
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
+
+        if self.menu_window_handle == 0 {
+            return;
+        }
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].disabled = disabled;
         set_menu_data(self.menu_window_handle, data);
@@ -79,6 +83,9 @@ impl MenuItem {
 
     pub fn set_label(&mut self, label: &str) {
         self.label = label.to_string();
+        if self.menu_window_handle == 0 {
+            return;
+        }
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].label = label.to_string();
         recalculate(data);
@@ -91,6 +98,10 @@ impl MenuItem {
         }
 
         self.icon = icon;
+        if self.menu_window_handle == 0 {
+            return;
+        }
+
         let data = get_menu_data_mut(self.menu_window_handle);
 
         data.icon_map.remove(&self.uuid);
@@ -178,6 +189,10 @@ impl MenuItem {
 
     pub fn set_checked(&mut self, checked: bool) {
         self.checked = checked;
+        if self.menu_window_handle == 0 {
+            return;
+        }
+
         let data = get_menu_data_mut(self.menu_window_handle);
         let index = self.index as usize;
         if data.items[index].menu_item_type == MenuItemType::Checkbox {

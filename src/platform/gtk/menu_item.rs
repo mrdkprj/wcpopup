@@ -42,6 +42,10 @@ pub struct MenuItem {
 impl MenuItem {
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
+        if self.gtk_menu_item_handle == 0 {
+            return;
+        }
+
         let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_sensitive(!disabled);
@@ -51,6 +55,10 @@ impl MenuItem {
 
     pub fn set_label(&mut self, label: &str) {
         self.label = label.to_string();
+        if self.gtk_menu_item_handle == 0 {
+            return;
+        }
+
         let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_label(label);
@@ -63,10 +71,13 @@ impl MenuItem {
             return;
         }
 
+        self.icon = icon;
+        if self.gtk_menu_item_handle == 0 {
+            return;
+        }
+
         let data = get_menu_data_mut(self.gtk_menu_handle);
         data.icon_set.remove(&self.uuid);
-
-        self.icon = icon;
 
         let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
         if let Some(icon) = &self.icon {
@@ -145,6 +156,10 @@ impl MenuItem {
 
     pub fn set_checked(&mut self, checked: bool) {
         self.checked = checked;
+        if self.gtk_menu_item_handle == 0 {
+            return;
+        }
+
         let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.checked = checked;
@@ -260,7 +275,8 @@ fn create_icon_label(label: &str, accelerator: &str, icon: &Option<PathBuf>, has
         gtk::Image::new()
     };
 
-    /*  Use icon margin if
+    /*
+        Use icon margin if
         - Menu has any icon item and reserve_icon_size is true
         - This item has icon
     */
