@@ -14,7 +14,7 @@ use gtk::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU16, Ordering},
 };
 
@@ -240,10 +240,8 @@ pub(crate) fn recreate_menu_item(gtk_menu_handle: isize) {
 
             if data.icon_set.is_empty() {
                 image_item.hide();
-            } else {
-                if menu_item.icon.is_some() || data.config.icon.as_ref().unwrap().reserve_icon_size {
-                    image_item.show();
-                }
+            } else if menu_item.icon.is_some() || data.config.icon.as_ref().unwrap().reserve_icon_size {
+                image_item.show();
             }
         }
     }
@@ -291,7 +289,7 @@ fn create_icon_label(label: &str, accelerator: &str, icon: &Option<PathBuf>, has
     box_container
 }
 
-fn apply_image_css(image: &impl IsA<Widget>, icon: &PathBuf, margin: Option<i32>) {
+fn apply_image_css(image: &impl IsA<Widget>, icon: &Path, margin: Option<i32>) {
     let css_provider = CssProvider::new();
     let css = get_icon_menu_css(icon, margin);
     css_provider.load_from_data(css.as_bytes()).unwrap();

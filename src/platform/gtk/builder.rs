@@ -160,6 +160,7 @@ impl MenuBuilder {
         self
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn radio_with_icon(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
         let item = MenuItem::new_radio_item(id, label, name, accelerator, checked, disabled, Some(icon));
         self.items.push(item);

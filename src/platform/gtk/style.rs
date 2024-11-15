@@ -1,6 +1,6 @@
 use super::{Config, Theme};
 use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner};
-use std::path::PathBuf;
+use std::path::Path;
 
 const CORNER_RADIUS: i32 = 8;
 const SEPARATOR_MARGIN: i32 = 5;
@@ -311,7 +311,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
     )
 }
 
-pub(crate) fn get_icon_menu_css(icon: &PathBuf, icon_margin: Option<i32>) -> String {
+pub(crate) fn get_icon_menu_css(icon: &Path, icon_margin: Option<i32>) -> String {
     let url = icon.to_string_lossy();
     if let Some(margin) = icon_margin {
         format!(
