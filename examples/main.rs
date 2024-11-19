@@ -116,7 +116,7 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(UserEvent::Append) => {
                 let mut menu = MENU_MAP.try_lock().unwrap();
-                let radio = MenuItem::new_radio_item("new_radio", "new_radio_label", "Theme", None, true, None);
+                let radio = MenuItem::new_radio_item("new_radio", "new_radio_label", "Theme", None, true, None, None);
                 let playback_speed = menu.get_menu_item_by_id("Theme").unwrap();
                 playback_speed.submenu.unwrap().insert(radio, 1);
 
@@ -341,8 +341,6 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
 
 pub fn add_menu(window_handle: isize) {
     let size = MenuSize {
-        #[cfg(target_os = "linux")]
-        item_horizontal_padding: 10,
         horizontal_padding: 0,
         border_size: 0,
         ..Default::default()

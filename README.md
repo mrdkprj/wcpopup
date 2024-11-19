@@ -28,7 +28,7 @@ fn example(window_handle: isize) {
     let mut builder = MenuBuilder::new(window_handle);
     // Using HWND
     // let mut builder = MenuBuilder::new_for_hwnd(hwnd);
-    // Using gtk::ApplicationWindow
+    // Using gtk::ApplicationWindow or gkt::Window
     // let mut builder = MenuBuilder::new_for_window(window);
 
     builder.check("menu_item1", "Fit To Window", true, None);
