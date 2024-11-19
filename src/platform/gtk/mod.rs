@@ -6,7 +6,7 @@ use gtk::{
     CssProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, time::Duration};
+use std::time::Duration;
 mod accelerator;
 mod builder;
 mod menu_item;
@@ -62,7 +62,7 @@ impl Menu {
             Container::Window(gtk_window) => {
                 gtk_menu.set_attach_widget(Some(gtk_window));
                 let gtk_window_handle = from_gtk_window(gtk_window);
-                let gtk_menu_handle = from_menu(&gtk_menu);
+                let gtk_menu_handle = from_gtk_menu(&gtk_menu);
 
                 if let Some(settings) = gtk_window.settings() {
                     settings.connect_gtk_application_prefer_dark_theme_notify(move |changed_settings| {
@@ -95,7 +95,7 @@ impl Menu {
         gtk_menu.show();
 
         let menu = Self {
-            gtk_menu_handle: from_menu(&gtk_menu),
+            gtk_menu_handle: from_gtk_menu(&gtk_menu),
             parent_gtk_menu_handle,
             gtk_window_handle,
             menu_type,
@@ -125,7 +125,7 @@ impl Menu {
 
     /// Gets the MenuItem with the specified id.
     pub fn get_menu_item_by_id(&self, id: &str) -> Option<MenuItem> {
-        let gtk_menu = to_menu(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
         find_by_id(&gtk_menu.children(), id)
     }
 
@@ -142,8 +142,8 @@ impl Menu {
     fn add_item(&mut self, item: MenuItem, index: Option<i32>) {
         let mut item = item.clone();
 
-        let gtk_menu = to_menu(self.gtk_menu_handle);
-        let data = get_menu_data_mut(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
+        let data = get_menu_data(self.gtk_menu_handle);
 
         let gtk_menu_item = self.new_gtk_menu_item(&mut item, &data.config);
         if let Some(index) = index {
@@ -158,36 +158,28 @@ impl Menu {
             gtk_menu.set_sensitive(true);
         }
 
-        if item.icon.is_some() {
-            data.icon_set.insert(item.uuid);
-        }
-
-        set_menu_data(self.gtk_menu_handle, data);
-
         self.after_change_items();
     }
 
     fn new_gtk_menu_item(&mut self, item: &mut MenuItem, config: &Config) -> gtk::MenuItem {
-        let data = get_menu_data(self.gtk_menu_handle);
-        let icon_set = &data.icon_set;
         match item.menu_item_type {
-            MenuItemType::Submenu => self.create_submenu(item, config, icon_set),
+            MenuItemType::Submenu => self.create_submenu(item, config),
             MenuItemType::Radio => {
                 if let Some(radio) = self.find_first_radio(&item.name) {
-                    let mut group = radio_group_from_item(&radio);
-                    create_gtk_menu_item(self.gtk_menu_handle, item, None, Some(&mut group), icon_set, config)
+                    let mut radio_groups = radio_group_from_item(&radio);
+                    create_gtk_menu_item(self.gtk_menu_handle, item, None, Some(&mut radio_groups), config)
                 } else {
-                    create_gtk_menu_item(self.gtk_menu_handle, item, None, None, icon_set, config)
+                    create_gtk_menu_item(self.gtk_menu_handle, item, None, None, config)
                 }
             }
-            _ => create_gtk_menu_item(self.gtk_menu_handle, item, None, None, icon_set, config),
+            _ => create_gtk_menu_item(self.gtk_menu_handle, item, None, None, config),
         }
     }
 
-    fn create_submenu(&mut self, item: &mut MenuItem, config: &Config, icon_set: &HashSet<u16>) -> gtk::MenuItem {
+    fn create_submenu(&mut self, item: &mut MenuItem, config: &Config) -> gtk::MenuItem {
         let mut builder = MenuBuilder::new_for_submenu(self, item, config);
         let submenu = builder.build().unwrap();
-        let gtk_menu_item = create_gtk_menu_item(self.gtk_menu_handle, item, Some(&builder.gtk_submenu), None, icon_set, config);
+        let gtk_menu_item = create_gtk_menu_item(self.gtk_menu_handle, item, Some(&builder.gtk_submenu), None, config);
         item.submenu = Some(submenu);
         gtk_menu_item
     }
@@ -198,19 +190,12 @@ impl Menu {
 
     /// Removes the MenuItem at the specified index.
     pub fn remove_at(&mut self, index: u32) {
-        let gtk_menu = to_menu(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
         if let Some(remove_gtk_menu_item) = gtk_menu.children().get(index as usize) {
-            let item = get_menu_item_data(remove_gtk_menu_item);
             gtk_menu.remove(remove_gtk_menu_item);
 
             if gtk_menu.children().is_empty() {
                 gtk_menu.set_sensitive(false);
-            }
-
-            if item.icon.is_some() {
-                let data = get_menu_data_mut(self.gtk_menu_handle);
-                data.icon_set.remove(&item.uuid);
-                set_menu_data(self.gtk_menu_handle, data);
             }
 
             self.after_change_items();
@@ -219,7 +204,7 @@ impl Menu {
 
     /// Removes the MenuItem.
     pub fn remove(&mut self, item: &MenuItem) {
-        let gtk_menu = to_menu(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
         let maybe_index = index_of_item(&gtk_menu.children(), item.uuid);
 
         if let Some(index) = maybe_index {
@@ -228,7 +213,7 @@ impl Menu {
     }
 
     fn after_change_items(&self) {
-        recreate_menu_item(self.gtk_menu_handle);
+        toggle_icon(self.gtk_menu_handle);
     }
 
     fn reset_haccel(&self, item: &MenuItem) {
@@ -244,7 +229,7 @@ impl Menu {
     /// Shows Menu at the specified point.
     pub fn popup_at(&self, x: i32, y: i32) {
         let gtk_window = to_gtk_window(self.gtk_window_handle);
-        let gtk_menu = to_menu(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
 
         let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
         event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
@@ -268,7 +253,7 @@ impl Menu {
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<MenuItem> {
         let gtk_window = to_gtk_window(self.gtk_window_handle);
-        let gtk_menu = to_menu(self.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
 
         let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
         event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
@@ -318,21 +303,21 @@ impl Menu {
 }
 
 pub(crate) fn collect_menu_items(gtk_menu_handle: isize) -> Vec<MenuItem> {
-    let gtk_menu = to_menu(gtk_menu_handle);
+    let gtk_menu = to_gtk_menu(gtk_menu_handle);
     gtk_menu.children().iter().map(|item| get_menu_item_data(item).clone()).collect()
 }
 
-fn find_by_id(items: &Vec<Widget>, id: &str) -> Option<MenuItem> {
+fn find_by_id(gtk_menu_items: &Vec<Widget>, id: &str) -> Option<MenuItem> {
     let item_id = id.to_string();
-    for item in items {
-        let menu_item = get_menu_item_data(item);
+    for gtk_menu_item in gtk_menu_items {
+        let menu_item = get_menu_item_data(gtk_menu_item);
         if menu_item.id == item_id {
             return Some(menu_item.clone());
         }
 
         if menu_item.menu_item_type == MenuItemType::Submenu {
-            let submenu = to_menu(menu_item.submenu.as_ref().unwrap().gtk_menu_handle);
-            if let Some(menu_item) = find_by_id(&submenu.children(), id) {
+            let gtk_submenu = to_gtk_menu(menu_item.submenu.as_ref().unwrap().gtk_menu_handle);
+            if let Some(menu_item) = find_by_id(&gtk_submenu.children(), id) {
                 return Some(menu_item);
             }
         }
@@ -340,16 +325,16 @@ fn find_by_id(items: &Vec<Widget>, id: &str) -> Option<MenuItem> {
     None
 }
 
-fn index_of_item(items: &[Widget], uuid: u16) -> Option<usize> {
-    for (index, item) in items.iter().enumerate() {
-        let menu_item = get_menu_item_data(item);
+fn index_of_item(gtk_menu_items: &[Widget], uuid: u16) -> Option<usize> {
+    for (index, gtk_menu_item) in gtk_menu_items.iter().enumerate() {
+        let menu_item = get_menu_item_data(gtk_menu_item);
         if menu_item.uuid == uuid {
             return Some(index);
         }
 
         if menu_item.menu_item_type == MenuItemType::Submenu {
-            let submenu = to_menu(menu_item.submenu.as_ref().unwrap().gtk_menu_handle);
-            if let Some(index) = index_of_item(&submenu.children(), uuid) {
+            let gtk_submenu = to_gtk_menu(menu_item.submenu.as_ref().unwrap().gtk_menu_handle);
+            if let Some(index) = index_of_item(&gtk_submenu.children(), uuid) {
                 return Some(index);
             }
         }
@@ -407,7 +392,7 @@ fn on_theme_change(menu_type: MenuType, gtk_menu_handle: isize, maybe_preferred_
 
     let widget_name = get_widget_name(new_theme);
 
-    let gtk_menu = to_menu(gtk_menu_handle);
+    let gtk_menu = to_gtk_menu(gtk_menu_handle);
     if let Some(menu_conainer_widget) = gtk_menu.parent() {
         let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
         gtk_window.set_widget_name(widget_name);
@@ -418,21 +403,21 @@ fn on_theme_change(menu_type: MenuType, gtk_menu_handle: isize, maybe_preferred_
     set_menu_data(gtk_menu_handle, data);
 }
 
-fn change_style(items: &Vec<Widget>, new_theme: Theme, widget_name: &str) {
-    for gtk_menu_item in items {
+fn change_style(gtk_menu_items: &Vec<Widget>, new_theme: Theme, widget_name: &str) {
+    for gtk_menu_item in gtk_menu_items {
         gtk_menu_item.set_widget_name(widget_name);
 
-        if let Some(submenu_widget) = gtk_menu_item.downcast_ref::<gtk::MenuItem>().unwrap().submenu() {
-            let submenu = submenu_widget.downcast::<gtk::Menu>().unwrap();
-            let submenu_handle = from_menu(&submenu);
+        if let Some(widget) = gtk_menu_item.downcast_ref::<gtk::MenuItem>().unwrap().submenu() {
+            let gtk_submenu = widget.downcast::<gtk::Menu>().unwrap();
+            let submenu_handle = from_gtk_menu(&gtk_submenu);
             let submenu_data = get_menu_data_mut(submenu_handle);
             submenu_data.config.theme = new_theme;
-            if let Some(menu_conainer_widget) = submenu.parent() {
+            if let Some(menu_conainer_widget) = gtk_submenu.parent() {
                 let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
                 gtk_window.set_widget_name(widget_name);
             }
-            submenu.set_widget_name(widget_name);
-            change_style(&submenu.children(), new_theme, widget_name);
+            gtk_submenu.set_widget_name(widget_name);
+            change_style(&gtk_submenu.children(), new_theme, widget_name);
             set_menu_data(submenu_handle, submenu_data);
         }
     }

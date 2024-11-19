@@ -1,6 +1,6 @@
 #[cfg(feature = "accelerator")]
 use super::to_gtk_window;
-use super::{get_menu_data, to_accel_group, to_menu_item, MenuItem};
+use super::{get_menu_data, to_accel_group, to_gtk_menu_item, MenuItem};
 use crate::MenuItemType;
 #[cfg(feature = "accelerator")]
 use gtk::{
@@ -22,7 +22,7 @@ pub(crate) fn setup_accel_group(accelerators: &HashMap<isize, String>) -> AccelG
     let accel_group = AccelGroup::new();
     for (menu_item_handle, accelerator) in accelerators {
         if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
-            let gtk_menu_item = to_menu_item(*menu_item_handle);
+            let gtk_menu_item = to_gtk_menu_item(*menu_item_handle);
             gtk_menu_item.add_accelerator("activate", &accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
         }
     }
@@ -35,7 +35,7 @@ pub(crate) fn add_accelerator(gtk_menu_handle: isize, new_accelerators: &HashMap
         let accel_group = to_accel_group(accel_group_handle);
         for (menu_item_handle, accelerator) in new_accelerators {
             if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
-                let gtk_menu_item = to_menu_item(*menu_item_handle);
+                let gtk_menu_item = to_gtk_menu_item(*menu_item_handle);
                 gtk_menu_item.add_accelerator("activate", &accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
             }
         }
@@ -49,20 +49,20 @@ pub(crate) fn add_accelerators_from_menu_item(gtk_menu_handle: isize, item: &Men
         &vec![item.clone()]
     };
 
-    let mut item_with_accel = Vec::new();
+    let mut items_with_accel = Vec::new();
     for item in items {
         if !item.accelerator.is_empty() {
-            item_with_accel.push(item);
+            items_with_accel.push(item);
         }
     }
 
-    if item_with_accel.is_empty() {
+    if items_with_accel.is_empty() {
         return;
     }
 
     let mut accelerators = HashMap::new();
 
-    for item in item_with_accel {
+    for item in items_with_accel {
         accelerators.insert(item.gtk_menu_item_handle, item.accelerator.clone());
     }
 

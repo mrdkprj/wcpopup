@@ -1,13 +1,12 @@
-use super::{accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_menu, to_gtk_window, to_menu, Config, Container, Menu, MenuItem, MenuType, Theme};
+use super::{
+    accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_icon, Config, Container, IconSettings, Menu, MenuItem, MenuType, Theme,
+};
 use crate::MenuItemType;
 use gtk::{
     glib::{Error, IsA, ObjectExt},
     prelude::{GtkWindowExt, MenuShellExt},
 };
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-};
+use std::{collections::HashMap, path::PathBuf};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -15,7 +14,6 @@ pub(crate) struct MenuData {
     gtk_menu_handle: isize,
     pub(crate) config: Config,
     pub(crate) accel_group_handle: Option<isize>,
-    pub(crate) icon_set: HashSet<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +100,14 @@ impl MenuBuilder {
         let (menu, _) = Menu::new(Container::Window(window.as_ref()), &config);
         Self {
             menu,
-            config,
+            config: Config {
+                icon: if let Some(icon) = config.icon {
+                    Some(icon)
+                } else {
+                    Some(IconSettings::default())
+                },
+                ..config
+            },
             theme,
             gtk_submenu: HashMap::new(),
             items: Vec::new(),
@@ -241,14 +246,14 @@ impl MenuBuilder {
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
     pub fn build(&mut self) -> Result<Menu, Error> {
-        let gtk_menu = to_menu(self.menu.gtk_menu_handle);
+        let gtk_menu = to_gtk_menu(self.menu.gtk_menu_handle);
 
         let is_main_menu = self.menu.menu_type == MenuType::Main;
 
         let mut radio_groups: HashMap<String, gtk::RadioMenuItem> = HashMap::new();
-        let icon_set: HashSet<u16> = self.items.iter().filter(|item| item.icon.is_some()).map(|item| item.uuid).collect();
+
         for item in self.items.iter_mut() {
-            let gtk_menu_item = create_gtk_menu_item(self.menu.gtk_menu_handle, item, Some(&self.gtk_submenu), Some(&mut radio_groups), &icon_set, &self.config);
+            let gtk_menu_item = create_gtk_menu_item(self.menu.gtk_menu_handle, item, Some(&self.gtk_submenu), Some(&mut radio_groups), &self.config);
             gtk_menu.append(&gtk_menu_item);
         }
 
@@ -265,13 +270,14 @@ impl MenuBuilder {
         }
 
         let data = MenuData {
-            gtk_menu_handle: from_menu(&gtk_menu),
+            gtk_menu_handle: from_gtk_menu(&gtk_menu),
             config: self.config.clone(),
             accel_group_handle,
-            icon_set,
         };
 
         unsafe { gtk_menu.set_data("data", data) };
+
+        toggle_icon(self.menu.gtk_menu_handle);
 
         Ok(self.menu.clone())
     }

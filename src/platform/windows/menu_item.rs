@@ -212,7 +212,7 @@ impl MenuItem {
         item
     }
 
-    /// Adds a menu item to submenu.
+    /// Adds a MenuItem to submenu.
     pub fn add_menu_item(&mut self, item: MenuItem) -> &Self {
         if let Some(items) = self.items.as_mut() {
             items.push(item);

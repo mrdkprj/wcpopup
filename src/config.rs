@@ -23,7 +23,7 @@ pub struct Config {
     /// On Windows, effective starting with Windows 11 Build 22000.
     pub corner: Corner,
     pub font: MenuFont,
-    pub icon: Option<Icon>,
+    pub icon: Option<IconSettings>,
 }
 
 impl Default for Config {
@@ -34,7 +34,7 @@ impl Default for Config {
             color: ThemeColor::default(),
             corner: Corner::Round,
             font: MenuFont::default(),
-            icon: Some(Icon::default()),
+            icon: Some(IconSettings::default()),
         }
     }
 }
@@ -50,21 +50,24 @@ impl Default for Config {
 ///   item_vertical_padding: 8,
 ///   item_horizontal_padding: 0,
 ///   submenu_offset: -3
+///   separator_size: 1,
 ///  ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MenuSize {
     /// Border width and height.
     pub border_size: i32,
-    /// Top and bottom padding of Menu.
+    /// Top and bottom paddings of Menu.
     pub vertical_padding: i32,
-    /// Left and right padding of Menu.
+    /// Left and right paddings of Menu.
     pub horizontal_padding: i32,
-    /// Top and bottom padding of MenuItem.
+    /// Top and bottom paddings of MenuItem.
     pub item_vertical_padding: i32,
-    /// Left and right padding of MenuItem.
+    /// Left and right paddings of MenuItem.
     pub item_horizontal_padding: i32,
     /// Submenu position relative to Menu.
     pub submenu_offset: i32,
+    /// Separator height(stroke width).
+    pub separator_size: i32,
 }
 
 impl Default for MenuSize {
@@ -76,6 +79,7 @@ impl Default for MenuSize {
             item_vertical_padding: 8,
             item_horizontal_padding: 0,
             submenu_offset: -3,
+            separator_size: 1,
         }
     }
 }
@@ -215,7 +219,7 @@ pub enum FontWeight {
 
 /// Icon settings.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Icon {
+pub struct IconSettings {
     /// SVG to override the default check-mark SVG for check/radio menu item.
     pub check_svg: Option<MenuSVG>,
     /// SVG to override the default arrow SVG for submenu item.

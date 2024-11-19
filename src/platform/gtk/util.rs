@@ -10,17 +10,17 @@ use gtk::{
 };
 
 pub(crate) fn get_menu_data<'a>(gtk_menu_handle: isize) -> &'a MenuData {
-    let menu = to_menu(gtk_menu_handle);
+    let menu = to_gtk_menu(gtk_menu_handle);
     unsafe { menu.data::<MenuData>("data").unwrap().as_ref() }
 }
 
 pub(crate) fn get_menu_data_mut<'a>(gtk_menu_handle: isize) -> &'a mut MenuData {
-    let menu = to_menu(gtk_menu_handle);
+    let menu = to_gtk_menu(gtk_menu_handle);
     unsafe { menu.data::<MenuData>("data").unwrap().as_mut() }
 }
 
 pub(crate) fn set_menu_data(gtk_menu_handle: isize, data: &mut MenuData) {
-    let menu = to_menu(gtk_menu_handle);
+    let menu = to_gtk_menu(gtk_menu_handle);
     unsafe { menu.set_data("data", data.clone()) };
 }
 
@@ -46,22 +46,22 @@ pub(crate) fn from_gtk_window(gtk_window: &gtk::Window) -> isize {
     ptr as isize
 }
 
-pub(crate) fn to_menu(gtk_menu_handle: isize) -> gtk::Menu {
+pub(crate) fn to_gtk_menu(gtk_menu_handle: isize) -> gtk::Menu {
     let menu: gtk::Menu = unsafe { gtk::Menu::from_glib_none(gtk_menu_handle as *mut GtkMenu) };
     menu
 }
 
-pub(crate) fn from_menu(gtk_menu: &gtk::Menu) -> isize {
+pub(crate) fn from_gtk_menu(gtk_menu: &gtk::Menu) -> isize {
     let ptr: *mut GtkMenu = gtk_menu.to_glib_none().0;
     ptr as isize
 }
 
-pub(crate) fn to_menu_item(gtk_menu_item_handle: isize) -> gtk::MenuItem {
+pub(crate) fn to_gtk_menu_item(gtk_menu_item_handle: isize) -> gtk::MenuItem {
     let menu_item: gtk::MenuItem = unsafe { gtk::MenuItem::from_glib_none(gtk_menu_item_handle as *mut GtkMenuItem) };
     menu_item
 }
 
-pub(crate) fn from_menu_item(gtk_menu_item: &gtk::MenuItem) -> isize {
+pub(crate) fn from_gtk_menu_item(gtk_menu_item: &gtk::MenuItem) -> isize {
     let ptr: *mut GtkMenuItem = gtk_menu_item.to_glib_none().0;
     ptr as isize
 }
@@ -83,6 +83,17 @@ pub(crate) fn to_font_weight(weight: FontWeight) -> u32 {
         FontWeight::Normal => 400,
         FontWeight::Medium => 500,
         FontWeight::Bold => 700,
+    }
+}
+
+pub(crate) fn to_font_weight_string<'a>(weight: u32) -> &'a str {
+    match weight {
+        100 => "Thin",
+        300 => "Light",
+        400 => "Regular",
+        500 => "Medium",
+        700 => "Bold",
+        _ => "Regular",
     }
 }
 

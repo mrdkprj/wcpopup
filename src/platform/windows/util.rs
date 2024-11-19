@@ -1,21 +1,20 @@
 use super::{direct2d::get_text_metrics, ColorScheme, Config, IconSpace, MenuData, MenuItem, MenuItemType, Theme};
 use once_cell::sync::Lazy;
 use std::{
-    ffi::c_void,
     mem::{size_of, transmute},
     os::windows::ffi::OsStrExt,
 };
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
     Win32::{
-        Foundation::{FreeLibrary, COLORREF, HMODULE, HWND},
+        Foundation::{FreeLibrary, COLORREF, HMODULE},
         Globalization::lstrlenW,
         Graphics::{
             DirectWrite::IDWriteFactory,
             Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE},
         },
         System::LibraryLoader::{GetProcAddress, LoadLibraryW},
-        UI::WindowsAndMessaging::{GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA, SM_CYMENU},
+        UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA},
     },
     UI::ViewManagement::{UIColorType, UISettings},
 };
@@ -24,14 +23,14 @@ static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dl
 
 macro_rules! hw {
     ($expression:expr) => {
-        HWND($expression as isize as *mut c_void)
+        windows::Win32::Foundation::HWND($expression as isize as *mut std::ffi::c_void)
     };
 }
 pub(crate) use hw;
 
 macro_rules! vtoi {
     ($expression:expr) => {
-        $expression as *mut c_void as isize
+        $expression as *mut std::ffi::c_void as isize
     };
 }
 pub(crate) use vtoi;
@@ -91,13 +90,12 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
 
 pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data: &MenuItem, theme: Theme, icon_space: IconSpace) -> Result<(i32, i32), Error> {
     let mut width = 0;
-    #[allow(unused_assignments)]
     let mut height = 0;
 
     match item_data.menu_item_type {
         MenuItemType::Separator => {
-            /* separator - use half system height and zero width */
-            height = unsafe { (GetSystemMetrics(SM_CYMENU) + 4) / 2 };
+            height += config.size.separator_size;
+            height += config.size.item_vertical_padding * 2;
         }
 
         _ => {
@@ -106,11 +104,15 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
                 raw_text.extend(encode_wide(&item_data.accelerator));
             }
 
-            let metrics = get_text_metrics(factory, theme, config, &mut raw_text).unwrap();
+            let metrics = get_text_metrics(factory, theme, config, &mut raw_text)?;
 
             height = metrics.height as i32;
             if height < 0 {
                 height = -height;
+            }
+            let icon_height = std::cmp::max(icon_space.left.width, icon_space.right.width);
+            if height < icon_height {
+                height += icon_height - height;
             }
             height += config.size.item_vertical_padding * 2;
 
@@ -121,7 +123,7 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
             width += icon_space.right.width + icon_space.right.lmargin + icon_space.right.rmargin;
             /* extra padding for accelerator */
             if !item_data.accelerator.is_empty() {
-                width += 30;
+                width += (config.font.dark_font_size.max(config.font.light_font_size) * 2.5) as i32;
             }
         }
     }
@@ -170,9 +172,9 @@ pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> 
     if is_win11() {
         let hwnd = hw!(window_handle);
         if data.config.size.border_size > 0 {
-            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
+            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const _, size_of::<COLORREF>() as u32)? };
         } else {
-            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const c_void, size_of::<COLORREF>() as u32)? };
+            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const _, size_of::<COLORREF>() as u32)? };
         }
     }
 

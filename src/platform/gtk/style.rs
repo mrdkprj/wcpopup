@@ -3,7 +3,6 @@ use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Cor
 use std::path::Path;
 
 const CORNER_RADIUS: i32 = 8;
-const SEPARATOR_MARGIN: i32 = 5;
 
 const WIDGET_NAME: &str = "wcpopup";
 const DARK_WIDGET_NAME: &str = "wcpopup-dark";
@@ -93,7 +92,7 @@ pub(crate) fn get_menu_css(config: &Config) -> String {
                 border-color:{};
             }}
         "#,
-        // system
+        /* system */
         config.size.horizontal_padding,
         config.size.horizontal_padding,
         vertical_padding,
@@ -108,7 +107,7 @@ pub(crate) fn get_menu_css(config: &Config) -> String {
         } else {
             0
         },
-        // dark
+        /* dark */
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         config.font.dark_font_size,
@@ -119,7 +118,7 @@ pub(crate) fn get_menu_css(config: &Config) -> String {
         } else {
             to_rgba_string(config.color.dark.background_color)
         },
-        // light
+        /* light */
         to_rgba_string(config.color.light.color),
         to_rgba_string(config.color.light.background_color),
         config.font.light_font_size,
@@ -134,7 +133,20 @@ pub(crate) fn get_menu_css(config: &Config) -> String {
 }
 
 pub(crate) fn get_menu_item_css(config: &Config) -> String {
+    let horizonta_padding = if config.size.item_horizontal_padding > 0 {
+        format!(
+            r#"
+                padding-right: {}px;
+                padding-left: {}px;
+            "#,
+            config.size.item_horizontal_padding, config.size.item_horizontal_padding,
+        )
+    } else {
+        String::new()
+    };
+
     let weight = to_font_weight(config.font.dark_font_weight);
+
     let icon_margin = if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
         format!(
             r#"
@@ -145,25 +157,47 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
     } else {
         String::new()
     };
+
+    let font_size = config.font.dark_font_size.max(config.font.light_font_size);
+
     let check = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
         format!(
             r#"
                 -gtk-icon-source: -gtk-recolor(url("{}"));
+                min-width: {}px;
+                min-height: {}px;
             "#,
-            svg.path.to_string_lossy()
+            svg.path.to_string_lossy(),
+            svg.width,
+            svg.height,
         )
     } else {
-        String::new()
+        format!(
+            r#"
+                min-width: {font_size}px;
+                min-height: {font_size}px;
+            "#,
+        )
     };
+
     let arrow = if let Some(svg) = &config.icon.as_ref().unwrap().arrow_svg {
         format!(
             r#"
                 -gtk-icon-source: -gtk-recolor(url("{}"));
+                min-width: {}px;
+                min-height: {}px;
             "#,
             svg.path.to_string_lossy(),
+            svg.width,
+            svg.height,
         )
     } else {
-        String::new()
+        format!(
+            r#"
+                min-width: {font_size}px;
+                min-height: {font_size}px;
+            "#,
+        )
     };
 
     format!(
@@ -178,19 +212,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             }}
             menuitem#{LIGHT_WIDGET_NAME} accelerator {{
                 color: {};
-            }}
-
-            separator#{WIDGET_NAME},
-            separator#{DARK_WIDGET_NAME},
-            separator#{LIGHT_WIDGET_NAME} {{
-                margin-top: {SEPARATOR_MARGIN}px;
-                margin-bottom: {SEPARATOR_MARGIN}px;
-            }}
-            separator#{DARK_WIDGET_NAME} {{
-                background-color: {};
-            }}
-            separator#{LIGHT_WIDGET_NAME} {{
-                background-color: {};
             }}
 
             menuitem#{DARK_WIDGET_NAME} check,
@@ -241,8 +262,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             menuitem#{WIDGET_NAME},
             menuitem#{DARK_WIDGET_NAME},
             menuitem#{LIGHT_WIDGET_NAME} {{
-                padding-left: {}px;
-                padding-right: {}px;
+                {}
                 padding-top: {}px;
                 padding-bottom: {}px;
                 border: none;
@@ -267,6 +287,21 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
                 color: {};
             }}
 
+            separator#{WIDGET_NAME},
+            separator#{DARK_WIDGET_NAME},
+            separator#{LIGHT_WIDGET_NAME} {{
+                padding-left: {}px;
+                padding-right: {}px;
+                margin-top: {}px;
+                margin-bottom: {}px;
+                min-height: {}px;
+            }}
+            separator#{DARK_WIDGET_NAME} {{
+                background-color: {};
+            }}
+            separator#{LIGHT_WIDGET_NAME} {{
+                background-color: {};
+            }}
         "#,
         /* accelerator */
         config.font.dark_font_size,
@@ -274,9 +309,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         weight,
         to_rgba_string(config.color.dark.accelerator),
         to_rgba_string(config.color.light.accelerator),
-        /* separator */
-        to_rgba_string(config.color.dark.separator),
-        to_rgba_string(config.color.light.separator),
         /* check */
         check,
         icon_margin,
@@ -298,8 +330,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.dark.hover_background_color),
         to_rgba_string(config.color.light.hover_background_color),
         /* item */
-        config.size.item_horizontal_padding,
-        config.size.item_horizontal_padding,
+        horizonta_padding,
         config.size.item_vertical_padding,
         config.size.item_vertical_padding,
         to_rgba_string(config.color.dark.color),
@@ -308,18 +339,38 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.hover_background_color),
         to_rgba_string(config.color.dark.disabled),
         to_rgba_string(config.color.light.disabled),
+        /* separator */
+        config.size.item_horizontal_padding,
+        config.size.item_horizontal_padding,
+        config.size.item_vertical_padding,
+        config.size.item_vertical_padding,
+        config.size.separator_size,
+        to_rgba_string(config.color.dark.separator),
+        to_rgba_string(config.color.light.separator),
     )
 }
 
-pub(crate) fn get_icon_menu_css(icon: &Path, icon_margin: Option<i32>) -> String {
+pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
     let url = icon.to_string_lossy();
-    if let Some(margin) = icon_margin {
+    let (width, height) = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
+        (svg.width as f32, svg.height as f32)
+    } else {
+        let font_size = config.font.dark_font_size.max(config.font.light_font_size);
+        (font_size, font_size)
+    };
+
+    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
         format!(
             r#"
                 menuitem image {{
                     background-image:-gtk-recolor(url("{url}"));
+                    background-repeat: no-repeat;
+                    background-size: contain;
+                    background-position: center;
                     margin-left: {margin}px;
                     margin-right: {margin}px;
+                    min-width: {width}px;
+                    min-height: {height}px;
                 }}
             "#
         )
@@ -328,6 +379,11 @@ pub(crate) fn get_icon_menu_css(icon: &Path, icon_margin: Option<i32>) -> String
             r#"
                 menuitem image {{
                     background-image:-gtk-recolor(url("{url}"));
+                    background-repeat: no-repeat;
+                    background-size: contain;
+                    background-position: center;
+                    min-width: {width}px;
+                    min-height: {height}px;
                 }}
             "#
         )

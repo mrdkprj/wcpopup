@@ -21,7 +21,7 @@
 //!   let mut builder = MenuBuilder::new(window_handle);
 //!   // Using HWND
 //!   // let mut builder = MenuBuilder::new_for_hwnd(hwnd);
-//!   // Using gtk::ApplicationWindow
+//!   // Using gtk::ApplicationWindow or gtk::Window
 //!   // let mut builder = MenuBuilder::new_for_window(window);
 //!
 //!   builder.check("menu_item1", "Menu Label 1", true, None);
@@ -68,7 +68,6 @@ use once_cell::sync::{Lazy, OnceCell};
 pub use platform::platform_impl::{Menu, MenuBuilder, MenuItem};
 use serde::{Deserialize, Serialize};
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 enum ThemeChangeFactor {
     SystemSetting,

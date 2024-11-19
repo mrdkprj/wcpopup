@@ -1,4 +1,4 @@
-use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, Icon, IconSize, IconSpace, MenuImage, MenuItem, MenuSVG, Theme};
+use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImage, MenuItem, MenuSVG, Theme};
 use crate::MenuItemType;
 use std::{fs, path::PathBuf};
 use windows::{
@@ -80,7 +80,7 @@ pub(crate) fn set_stroke_color(element: &ID2D1SvgElement, color: u32) {
 }
 
 fn font_point_to_pixel(font_point: f32) -> f32 {
-    1.3 * font_point
+    (1.3 * font_point).round()
 }
 
 pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> ID2D1SvgDocument {
@@ -296,11 +296,11 @@ pub(crate) fn get_text_format(factory: &IDWriteFactory, theme: Theme, config: &C
     let format = unsafe { factory.CreateTextFormat(to_pcwstr(&config.font.font_family), None, font_weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, w!(""))? };
 
     if alignment == TextAlignment::Leading {
-        unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING) }?;
+        unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)? };
     }
 
     if alignment == TextAlignment::Trailing {
-        unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING) }?;
+        unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING)? };
     }
 
     unsafe { format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)? };
@@ -311,10 +311,10 @@ pub(crate) fn get_text_format(factory: &IDWriteFactory, theme: Theme, config: &C
 }
 
 pub(crate) fn get_text_metrics(factory: &IDWriteFactory, theme: Theme, config: &Config, text: &mut Vec<u16>) -> Result<DWRITE_TEXT_METRICS, Error> {
-    let format = get_text_format(factory, theme, config, TextAlignment::Leading).unwrap();
-    let layout = unsafe { factory.CreateTextLayout(text.as_mut(), &format, 0.0, 0.0).unwrap() };
+    let format = get_text_format(factory, theme, config, TextAlignment::Leading)?;
+    let layout = unsafe { factory.CreateTextLayout(text.as_mut(), &format, 0.0, 0.0)? };
     let mut textmetrics = DWRITE_TEXT_METRICS::default();
-    unsafe { layout.GetMetrics(&mut textmetrics).unwrap() }
+    unsafe { layout.GetMetrics(&mut textmetrics)? };
 
     Ok(textmetrics)
 }
@@ -338,7 +338,7 @@ pub(crate) fn colorref_to_d2d1_color_f(color: u32) -> D2D1_COLOR_F {
     }
 }
 
-pub(crate) fn get_icon_space(items: &[MenuItem], icon_config: &Icon, check_svg: &ID2D1SvgDocument, submenu_svg: &ID2D1SvgDocument) -> IconSpace {
+pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, check_svg: &ID2D1SvgDocument, submenu_svg: &ID2D1SvgDocument) -> IconSpace {
     if items.is_empty() {
         return IconSpace::default();
     }
@@ -359,7 +359,7 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_config: &Icon, check_svg: 
     let check_svg_size = unsafe { check_svg.GetViewportSize().width } as i32;
     let submenu_svg_size = unsafe { submenu_svg.GetViewportSize().width } as i32;
 
-    let icon_margin = if let Some(margin) = icon_config.horizontal_margin {
+    let icon_margin = if let Some(margin) = icon_settings.horizontal_margin {
         MIN_BUTTON_WIDTH + margin
     } else {
         MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN

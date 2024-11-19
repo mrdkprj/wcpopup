@@ -5,7 +5,7 @@ use super::{
     direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, create_svg_from_path, get_icon_space},
     get_menu_data, hw, is_win11,
     menu_item::MenuItem,
-    set_window_border_color, Config, Corner, Icon, IconSpace, Menu, PopupInfo, Size, Theme,
+    set_window_border_color, Config, Corner, IconSettings, IconSpace, Menu, PopupInfo, Size, Theme,
 };
 use crate::{MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
@@ -155,7 +155,7 @@ impl MenuBuilder {
                 icon: if let Some(icon) = config.icon {
                     Some(icon)
                 } else {
-                    Some(Icon::default())
+                    Some(IconSettings::default())
                 },
                 ..config
             },

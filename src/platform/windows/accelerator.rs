@@ -3,7 +3,7 @@ use super::{get_menu_data, MenuData};
 #[cfg(feature = "accelerator")]
 use crate::platform::platform_impl::vtoi;
 #[cfg(feature = "accelerator")]
-use std::{collections::HashMap, ffi::c_void};
+use std::collections::HashMap;
 #[cfg(feature = "accelerator")]
 use windows::Win32::{
     Foundation::HWND,

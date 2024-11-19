@@ -1,19 +1,23 @@
 use super::{
-    collect_menu_items, from_menu_item, get_icon_menu_css, get_menu_data, get_menu_data_mut, get_menu_item_data_mut, set_menu_item_data,
+    collect_menu_items, from_gtk_menu_item, get_icon_menu_css, get_menu_data, get_menu_item_data_mut, set_menu_item_data,
     style::{get_menu_item_css, get_widget_name},
-    to_menu_item, Config, Icon, Menu, SubmenuData,
+    to_gtk_menu_item, Config, Menu, SubmenuData,
 };
-use crate::{InnerMenuEvent, MenuEvent, MenuItemType};
+use crate::{
+    platform::platform_impl::{to_font_weight, to_font_weight_string},
+    InnerMenuEvent, MenuEvent, MenuItemType,
+};
 use gtk::{
     ffi::{gtk_style_context_add_provider_for_screen, GtkStyleProvider},
     gdk::ffi::gdk_screen_get_default,
     glib::{translate::ToGlibPtr, Cast, IsA},
+    pango::FontDescription,
     prelude::{AccelLabelExt, BoxExt, CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, StyleContextExt, WidgetExt},
     AccelLabel, CssProvider, Orientation, StyleProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU16, Ordering},
 };
@@ -46,7 +50,7 @@ impl MenuItem {
             return;
         }
 
-        let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
+        let gtk_menu_item = to_gtk_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_sensitive(!disabled);
         menu_item.disabled = disabled;
@@ -59,7 +63,7 @@ impl MenuItem {
             return;
         }
 
-        let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
+        let gtk_menu_item = to_gtk_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_label(label);
         menu_item.label = label.to_string();
@@ -76,21 +80,19 @@ impl MenuItem {
             return;
         }
 
-        let data = get_menu_data_mut(self.gtk_menu_handle);
-        data.icon_set.remove(&self.uuid);
+        let data = get_menu_data(self.gtk_menu_handle);
+        let gtk_menu_item = to_gtk_menu_item(self.gtk_menu_item_handle);
 
-        let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
         if let Some(icon) = &self.icon {
             let image_item = get_image_item(&gtk_menu_item);
-            apply_image_css(&image_item, icon, data.config.icon.as_ref().unwrap().horizontal_margin);
-            data.icon_set.insert(self.uuid);
+            apply_image_css(&image_item, icon, &data.config);
         }
 
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.icon = self.icon.clone();
         set_menu_item_data(&gtk_menu_item, menu_item);
 
-        recreate_menu_item(self.gtk_menu_handle);
+        toggle_icon(self.gtk_menu_handle);
     }
 }
 
@@ -160,7 +162,7 @@ impl MenuItem {
             return;
         }
 
-        let gtk_menu_item = to_menu_item(self.gtk_menu_item_handle);
+        let gtk_menu_item = to_gtk_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.checked = checked;
         menu_item.suppress_event = true;
@@ -169,6 +171,7 @@ impl MenuItem {
         if self.menu_item_type == MenuItemType::Checkbox {
             gtk_menu_item.downcast_ref::<gtk::CheckMenuItem>().unwrap().set_active(checked);
         }
+
         if self.menu_item_type == MenuItemType::Radio {
             gtk_menu_item.downcast_ref::<gtk::RadioMenuItem>().unwrap().set_active(checked);
         }
@@ -226,21 +229,29 @@ impl MenuItem {
 }
 
 pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::RadioMenuItem> {
-    let gtk_radio_item = to_menu_item(item.gtk_menu_item_handle).downcast::<gtk::RadioMenuItem>().unwrap();
+    let gtk_radio_item = to_gtk_menu_item(item.gtk_menu_item_handle).downcast::<gtk::RadioMenuItem>().unwrap();
     HashMap::from([(item.name.clone(), gtk_radio_item)])
 }
 
-pub(crate) fn recreate_menu_item(gtk_menu_handle: isize) {
+pub(crate) fn toggle_icon(gtk_menu_handle: isize) {
     let data = get_menu_data(gtk_menu_handle);
     let menu_items = collect_menu_items(gtk_menu_handle);
+    let has_check = menu_items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
+    let has_icon = menu_items.iter().any(|item| item.icon.is_some());
     for menu_item in menu_items {
         if menu_item.menu_item_type != MenuItemType::Separator {
-            let gtk_menu_item = to_menu_item(menu_item.gtk_menu_item_handle);
+            let gtk_menu_item = to_gtk_menu_item(menu_item.gtk_menu_item_handle);
             let image_item = get_image_item(&gtk_menu_item);
 
-            if data.icon_set.is_empty() {
+            /*
+                Use icon margin if
+                - Menu has no check item but has any icon item
+                - Menu has any icon item and reserve_icon_size is true
+                - This item has icon
+            */
+            if !has_icon {
                 image_item.hide();
-            } else if menu_item.icon.is_some() || data.config.icon.as_ref().unwrap().reserve_icon_size {
+            } else if (!has_check && has_icon) || data.config.icon.as_ref().unwrap().reserve_icon_size || menu_item.icon.is_some() {
                 image_item.show();
             }
         }
@@ -253,34 +264,32 @@ fn get_image_item(gtk_menu_item: &gtk::MenuItem) -> Widget {
     box_container.children().first().unwrap().clone()
 }
 
-fn create_icon_label(label: &str, accelerator: &str, icon: &Option<PathBuf>, has_icon: bool, icon_data: &Icon, accel_widget: Option<&impl IsA<Widget>>) -> gtk::Box {
+fn create_icon_label(label: &str, accelerator: &str, icon: &Option<PathBuf>, config: &Config, accel_widget: Option<&impl IsA<Widget>>) -> gtk::Box {
     let box_container = gtk::Box::new(Orientation::Horizontal, 6);
     let accel_label = AccelLabel::builder().label(label).xalign(0.0).build();
     accel_label.set_accel_widget(accel_widget);
+
     if !accelerator.is_empty() {
         /* When Image + Label + Accelerator, prevent Label width from being too small */
         let layout = accel_label.create_pango_layout(Some(label));
+        let weight = to_font_weight_string(std::cmp::max(to_font_weight(config.font.dark_font_weight), to_font_weight(config.font.light_font_weight)));
+        let size = config.font.dark_font_size.max(config.font.light_font_size);
+        let font = format!(r#""{}" Normal {} {}"#, config.font.font_family, weight, size);
+        let desc = FontDescription::from_string(&font);
+        layout.set_font_description(Some(&desc));
         let (width, _) = layout.pixel_size();
         accel_label.set_width_request(width);
     }
     accel_label.show();
 
+    /* Initially hide Image */
     let image = if let Some(icon) = icon {
         let image = gtk::Image::new();
-        apply_image_css(&image, icon, icon_data.horizontal_margin);
+        apply_image_css(&image, icon, config);
         image
     } else {
         gtk::Image::new()
     };
-
-    /*
-        Use icon margin if
-        - Menu has any icon item and reserve_icon_size is true
-        - This item has icon
-    */
-    if icon.is_some() || (has_icon && icon_data.reserve_icon_size) {
-        image.show();
-    }
 
     box_container.pack_start(&image, false, false, 0);
     box_container.pack_start(&accel_label, true, true, 0);
@@ -289,9 +298,9 @@ fn create_icon_label(label: &str, accelerator: &str, icon: &Option<PathBuf>, has
     box_container
 }
 
-fn apply_image_css(image: &impl IsA<Widget>, icon: &Path, margin: Option<i32>) {
+fn apply_image_css(image: &impl IsA<Widget>, icon: &Path, config: &Config) {
     let css_provider = CssProvider::new();
-    let css = get_icon_menu_css(icon, margin);
+    let css = get_icon_menu_css(icon, config);
     css_provider.load_from_data(css.as_bytes()).unwrap();
     image.style_context().add_provider(&css_provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
@@ -301,26 +310,24 @@ pub(crate) fn create_gtk_menu_item(
     item: &mut MenuItem,
     submenudata_map: Option<&HashMap<u16, SubmenuData>>,
     radio_groups: Option<&mut HashMap<String, gtk::RadioMenuItem>>,
-    icon_set: &HashSet<u16>,
     config: &Config,
 ) -> gtk::MenuItem {
-    let has_icon = !icon_set.is_empty();
     let gtk_menu_item = match item.menu_item_type {
         MenuItemType::Text => {
             let gtk_menu_item = gtk::MenuItem::builder().sensitive(!item.disabled).build();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, has_icon, config.icon.as_ref().unwrap(), Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
-            item.gtk_menu_item_handle = from_menu_item(&gtk_menu_item);
+            item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
             gtk_menu_item
         }
         MenuItemType::Checkbox => {
             let check_menu_item = gtk::CheckMenuItem::builder().sensitive(!item.disabled).active(item.checked).build();
             let gtk_menu_item = check_menu_item.upcast::<gtk::MenuItem>();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, has_icon, config.icon.as_ref().unwrap(), Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
-            item.gtk_menu_item_handle = from_menu_item(&gtk_menu_item);
+            item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
             gtk_menu_item
         }
         MenuItemType::Radio => {
@@ -334,15 +341,15 @@ pub(crate) fn create_gtk_menu_item(
                 }
             }
             let gtk_menu_item = radio_menu_item.upcast::<gtk::MenuItem>();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, has_icon, config.icon.as_ref().unwrap(), Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
-            item.gtk_menu_item_handle = from_menu_item(&gtk_menu_item);
+            item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
             gtk_menu_item
         }
         MenuItemType::Separator => {
             let gtk_menu_item = gtk::SeparatorMenuItem::new().upcast::<gtk::MenuItem>();
-            item.gtk_menu_item_handle = from_menu_item(&gtk_menu_item);
+            item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
             gtk_menu_item
         }
         MenuItemType::Submenu => {
@@ -353,11 +360,11 @@ pub(crate) fn create_gtk_menu_item(
             }
 
             let gtk_menu_item = gtk::MenuItem::builder().sensitive(!item.disabled).build();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, has_icon, config.icon.as_ref().unwrap(), Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
             gtk_menu_item.set_submenu(Some(&submedata.gtk_submenu));
-            item.gtk_menu_item_handle = from_menu_item(&gtk_menu_item);
+            item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
             item.submenu = Some(submedata.submenu.clone());
 
             gtk_menu_item
