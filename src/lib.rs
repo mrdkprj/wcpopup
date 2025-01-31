@@ -93,21 +93,21 @@ pub enum MenuItemType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct RgbaIcon {
+pub(crate) struct RgbaIcon {
     rgba: Vec<u8>,
     width: u32,
     height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MenuIconKind {
+pub(crate) enum MenuIconKind {
     Path(PathBuf),
     Rgba(RgbaIcon),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MenuIcon {
-    pub icon: MenuIconKind,
+    pub(crate) icon: MenuIconKind,
 }
 
 impl MenuIcon {
