@@ -1,5 +1,5 @@
 use super::{Config, Theme};
-use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner};
+use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner, RgbaIcon};
 use std::path::Path;
 
 const CORNER_RADIUS: i32 = 8;
@@ -348,6 +348,32 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.dark.separator),
         to_rgba_string(config.color.light.separator),
     )
+}
+
+pub(crate) fn get_rgba_icon_menu_css(rgba_icon: &RgbaIcon, config: &Config) -> String {
+    let width = rgba_icon.width;
+    let height = rgba_icon.height;
+    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+        format!(
+            r#"
+                menuitem image {{
+                    margin-left: {margin}px;
+                    margin-right: {margin}px;
+                    min-width: {width}px;
+                    min-height: {height}px;
+                }}
+            "#
+        )
+    } else {
+        format!(
+            r#"
+                menuitem image {{
+                    min-width: {width}px;
+                    min-height: {height}px;
+                }}
+            "#
+        )
+    }
 }
 
 pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {

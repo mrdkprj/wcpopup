@@ -1,4 +1,8 @@
-use super::{direct2d::get_text_metrics, ColorScheme, Config, IconSpace, MenuData, MenuItem, MenuItemType, Theme};
+use super::{
+    create_write_factory,
+    direct2d::{get_icon_space, get_text_metrics},
+    ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS,
+};
 use once_cell::sync::Lazy;
 use std::{
     mem::{size_of, transmute},
@@ -13,7 +17,10 @@ use windows::{
             DirectWrite::IDWriteFactory,
             Dwm::{DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE},
         },
-        System::LibraryLoader::{GetProcAddress, LoadLibraryW},
+        System::{
+            Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
+            LibraryLoader::{GetProcAddress, LoadLibraryW},
+        },
         UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA},
     },
     UI::ViewManagement::{UIColorType, UISettings},
@@ -21,12 +28,12 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 
-macro_rules! hw {
+macro_rules! hwnd {
     ($expression:expr) => {
         windows::Win32::Foundation::HWND($expression as isize as *mut std::ffi::c_void)
     };
 }
-pub(crate) use hw;
+pub(crate) use hwnd;
 
 macro_rules! vtoi {
     ($expression:expr) => {
@@ -36,19 +43,19 @@ macro_rules! vtoi {
 pub(crate) use vtoi;
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(hw!(window_handle), GWL_USERDATA) };
+    let userdata = unsafe { GetWindowLongPtrW(hwnd!(window_handle), GWL_USERDATA) };
     let item_data_ptr = userdata as *const MenuData;
     unsafe { &*item_data_ptr }
 }
 
 pub(crate) fn get_menu_data_mut<'a>(window_handle: isize) -> &'a mut MenuData {
-    let userdata = unsafe { GetWindowLongPtrW(hw!(window_handle), GWL_USERDATA) };
+    let userdata = unsafe { GetWindowLongPtrW(hwnd!(window_handle), GWL_USERDATA) };
     let item_data_ptr = userdata as *mut MenuData;
     unsafe { &mut *item_data_ptr }
 }
 
 pub(crate) fn set_menu_data(window_handle: isize, data: &mut MenuData) {
-    unsafe { SetWindowLongPtrW(hw!(window_handle), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
+    unsafe { SetWindowLongPtrW(hwnd!(window_handle), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
 }
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
@@ -86,6 +93,76 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
             data.items[i].checked = false;
         }
     }
+}
+
+pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Result<Size, Error> {
+    let mut width = 0;
+    let mut height = 0;
+
+    /* Add padding */
+    height += config.size.vertical_padding;
+    /* Add border size */
+    height += config.size.border_size;
+
+    if config.corner == Corner::Round {
+        height += CORNER_RADIUS;
+    }
+
+    let factory = create_write_factory();
+
+    /* Calculate item top, left, bottom and menu size */
+    for (index, item) in items.iter_mut().enumerate() {
+        item.index = index as i32;
+
+        /* Don't measure invisible MenuItem */
+        if !item.visible {
+            continue;
+        }
+
+        item.top = height;
+        item.left = config.size.border_size + config.size.horizontal_padding;
+        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space)?;
+        item.bottom = item.top + item_height;
+
+        width = std::cmp::max(width, item_width);
+        height += item_height;
+    }
+
+    /* Calculate item right */
+    for item in items {
+        if item.visible {
+            item.right = item.left + width;
+        } else {
+            /* Invalidate MenuItem */
+            item.top = -1;
+            item.left = -1;
+            item.bottom = -1;
+            item.right = -1;
+            continue;
+        }
+    }
+
+    /* Add padding */
+    width += config.size.horizontal_padding * 2;
+    height += config.size.vertical_padding;
+
+    if config.corner == Corner::Round {
+        height += CORNER_RADIUS;
+    }
+
+    /* Add border size */
+    width += config.size.border_size * 2;
+    height += config.size.border_size;
+
+    Ok(Size {
+        width,
+        height,
+    })
+}
+
+pub(crate) fn recalculate(data: &mut MenuData) {
+    data.icon_space = get_icon_space(&data.items, data.config.icon.as_ref().unwrap(), &data.check_svg, &data.submenu_svg);
+    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
 }
 
 pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data: &MenuItem, theme: Theme, icon_space: IconSpace) -> Result<(i32, i32), Error> {
@@ -170,7 +247,7 @@ pub(crate) fn free_library() {
 
 pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {
     if is_win11() {
-        let hwnd = hw!(window_handle);
+        let hwnd = hwnd!(window_handle);
         if data.config.size.border_size > 0 {
             unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const _, size_of::<COLORREF>() as u32)? };
         } else {
@@ -200,4 +277,19 @@ pub(crate) fn is_sys_dark_color() -> bool {
     let clr = settings.GetColorValue(UIColorType::Background).unwrap();
     let sum: u32 = (5 * clr.G as u32) + (2 * clr.R as u32) + (clr.B as u32);
     sum <= (8 * 128)
+}
+
+pub(crate) struct ComGuard;
+
+impl ComGuard {
+    pub fn new() -> Self {
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+        Self
+    }
+}
+
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        unsafe { CoUninitialize() };
+    }
 }

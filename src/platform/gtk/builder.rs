@@ -1,12 +1,12 @@
 use super::{
     accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_icon, Config, Container, IconSettings, Menu, MenuItem, MenuType, Theme,
 };
-use crate::MenuItemType;
+use crate::{MenuIcon, MenuItemType};
 use gtk::{
     glib::{Error, IsA, ObjectExt},
     prelude::{GtkWindowExt, MenuShellExt},
 };
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -48,6 +48,7 @@ impl MenuBuilder {
         let config = Config::default();
         let theme = config.theme;
         let (menu, _) = Menu::new(Container::Window(window.as_ref()), &config);
+
         Self {
             menu,
             config,
@@ -115,59 +116,77 @@ impl MenuBuilder {
     }
 
     /// Adds a text MenuItem to Menu.
-    pub fn text(&mut self, id: &str, label: &str, disabled: Option<bool>) -> &Self {
+    pub fn text(&mut self, id: &str, label: &str, disabled: bool) -> &Self {
         let item = MenuItem::new_text_item(id, label, None, disabled, None);
         self.items.push(item);
         self
     }
 
-    pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: &str) -> &Self {
+    pub fn text_with_accelerator(&mut self, id: &str, label: &str, disabled: bool, accelerator: &str) -> &Self {
         let item = MenuItem::new_text_item(id, label, Some(accelerator), disabled, None);
         self.items.push(item);
         self
     }
 
-    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
-        let item = MenuItem::new_text_item(id, label, accelerator, disabled, Some(icon));
+    pub fn text_with_icon(&mut self, id: &str, label: &str, disabled: bool, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_text_item(id, label, None, disabled, Some(icon));
+        self.items.push(item);
+        self
+    }
+
+    pub fn text_with_accel_icon(&mut self, id: &str, label: &str, disabled: bool, accelerator: &str, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_text_item(id, label, Some(accelerator), disabled, Some(icon));
         self.items.push(item);
         self
     }
 
     /// Adds a check MenuItem to Menu.
-    pub fn check(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>) -> &Self {
+    pub fn check(&mut self, id: &str, label: &str, checked: bool, disabled: bool) -> &Self {
         let item = MenuItem::new_check_item(id, label, None, checked, disabled, None);
         self.items.push(item);
         self
     }
 
-    pub fn check_with_accelerator(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
+    pub fn check_with_accelerator(&mut self, id: &str, label: &str, checked: bool, disabled: bool, accelerator: &str) -> &Self {
         let item = MenuItem::new_check_item(id, label, Some(accelerator), checked, disabled, None);
         self.items.push(item);
         self
     }
 
-    pub fn check_with_icon(&mut self, id: &str, label: &str, checked: bool, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
-        let item = MenuItem::new_check_item(id, label, accelerator, checked, disabled, Some(icon));
+    pub fn check_with_icon(&mut self, id: &str, label: &str, checked: bool, disabled: bool, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_check_item(id, label, None, checked, disabled, Some(icon));
+        self.items.push(item);
+        self
+    }
+
+    pub fn check_with_accel_icon(&mut self, id: &str, label: &str, checked: bool, disabled: bool, accelerator: &str, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_check_item(id, label, Some(accelerator), checked, disabled, Some(icon));
         self.items.push(item);
         self
     }
 
     /// Adds a radio MenuItem to Menu.
-    pub fn radio(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>) -> &Self {
+    pub fn radio(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: bool) -> &Self {
         let item = MenuItem::new_radio_item(id, label, name, None, checked, disabled, None);
         self.items.push(item);
         self
     }
 
-    pub fn radio_with_accelerator(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: &str) -> &Self {
+    pub fn radio_with_accelerator(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: bool, accelerator: &str) -> &Self {
         let item = MenuItem::new_radio_item(id, label, name, Some(accelerator), checked, disabled, None);
         self.items.push(item);
         self
     }
 
+    pub fn radio_with_icon(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: bool, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_radio_item(id, label, name, None, checked, disabled, Some(icon));
+        self.items.push(item);
+        self
+    }
+
     #[allow(clippy::too_many_arguments)]
-    pub fn radio_with_icon(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: Option<bool>, accelerator: Option<&str>, icon: PathBuf) -> &Self {
-        let item = MenuItem::new_radio_item(id, label, name, accelerator, checked, disabled, Some(icon));
+    pub fn radio_with_accel_icon(&mut self, id: &str, label: &str, name: &str, checked: bool, disabled: bool, accelerator: &str, icon: MenuIcon) -> &Self {
+        let item = MenuItem::new_radio_item(id, label, name, Some(accelerator), checked, disabled, Some(icon));
         self.items.push(item);
         self
     }
@@ -199,7 +218,7 @@ impl MenuBuilder {
     }
 
     /// Adds a submenu MenuItem to Menu.
-    pub fn submenu(&mut self, id: &str, label: &str, disabled: Option<bool>) -> Self {
+    pub fn submenu(&mut self, id: &str, label: &str, disabled: bool) -> Self {
         let (menu, gtk_menu) = Menu::new(Container::Menu(&self.menu), &self.config);
         let item = MenuItem::new_submenu_item(id, label, disabled, None);
 
@@ -221,7 +240,7 @@ impl MenuBuilder {
         builder
     }
 
-    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: Option<bool>, icon: PathBuf) -> Self {
+    pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: bool, icon: MenuIcon) -> Self {
         let (menu, gtk_menu) = Menu::new(Container::Menu(&self.menu), &self.config);
         let item = MenuItem::new_submenu_item(id, label, disabled, Some(icon));
 
@@ -241,6 +260,33 @@ impl MenuBuilder {
 
         self.items.push(item);
         builder
+    }
+
+    /// Adds a MenuItem to MenuBuilder.
+    pub fn append(&mut self, mut menu_item: MenuItem) -> &Self {
+        if menu_item.menu_item_type == MenuItemType::Submenu {
+            let mut builder = Self::new_for_submenu(&self.menu, &menu_item, &self.config);
+            let submenu = builder.build().unwrap();
+
+            self.gtk_submenu.insert(
+                menu_item.uuid,
+                SubmenuData {
+                    gtk_submenu: to_gtk_menu(submenu.gtk_menu_handle),
+                    submenu: submenu.clone(),
+                },
+            );
+            menu_item.submenu = Some(submenu);
+        }
+        self.items.push(menu_item);
+        self
+    }
+
+    /// Adds MenuItems to MenuBuilder.
+    pub fn append_all(&mut self, menu_items: Vec<MenuItem>) -> &Self {
+        for menu_item in menu_items {
+            self.append(menu_item);
+        }
+        self
     }
 
     /// Build Menu to make it ready to become visible.

@@ -1,5 +1,5 @@
-use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImage, MenuItem, MenuSVG, Theme};
-use crate::MenuItemType;
+use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme};
+use crate::{MenuIcon, MenuIconKind, MenuItemType};
 use std::{fs, path::PathBuf};
 use windows::{
     core::{w, Error, Interface},
@@ -8,9 +8,9 @@ use windows::{
         Graphics::{
             Direct2D::{
                 Common::{D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_F},
-                D2D1CreateFactory, ID2D1DCRenderTarget, ID2D1DeviceContext5, ID2D1Factory1, ID2D1SvgDocument, ID2D1SvgElement, D2D1_BITMAP_PROPERTIES1, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG,
-                D2D1_SVG_PATH_COMMAND_ARC_RELATIVE, D2D1_SVG_PATH_COMMAND_LINE_ABSOLUTE, D2D1_SVG_PATH_COMMAND_LINE_RELATIVE, D2D1_SVG_PATH_COMMAND_MOVE_ABSOLUTE,
+                D2D1CreateFactory, ID2D1Bitmap1, ID2D1DCRenderTarget, ID2D1DeviceContext5, ID2D1Factory1, ID2D1SvgDocument, ID2D1SvgElement, D2D1_BITMAP_PROPERTIES1,
+                D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT, D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
+                D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, D2D1_SVG_PATH_COMMAND_ARC_RELATIVE, D2D1_SVG_PATH_COMMAND_LINE_ABSOLUTE, D2D1_SVG_PATH_COMMAND_LINE_RELATIVE, D2D1_SVG_PATH_COMMAND_MOVE_ABSOLUTE,
             },
             DirectWrite::{
                 DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
@@ -22,7 +22,7 @@ use windows::{
                 CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
             },
         },
-        System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED},
+        System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
         UI::Shell::SHCreateMemStream,
     },
 };
@@ -195,51 +195,62 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
     document
 }
 
-pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, icon: &PathBuf, size: i32) -> MenuImage {
+pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, size: i32) -> MenuImageType {
+    match &menu_icon.icon {
+        MenuIconKind::Path(icon) => {
+            let mut is_svg = false;
+            if let Some(extension) = icon.extension() {
+                is_svg = extension.eq_ignore_ascii_case("svg");
+            }
+
+            if is_svg {
+                let svg_document = create_svg_from_path(
+                    target,
+                    &MenuSVG {
+                        path: icon.clone(),
+                        width: size,
+                        height: size,
+                    },
+                );
+                MenuImageType::Svg(svg_document)
+            } else {
+                let bitmap = create_bitmap_from_path(target, icon);
+                MenuImageType::Bitmap(bitmap)
+            }
+        }
+        MenuIconKind::Rgba(icon) => {
+            let bitmap = create_bitmap_from_rgba(target, icon.rgba.clone(), icon.width, icon.height);
+            MenuImageType::Bitmap(bitmap)
+        }
+    }
+}
+
+fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> ID2D1Bitmap1 {
     let dc5 = get_device_context(target);
 
-    let mut is_svg = false;
-    if let Some(extension) = icon.extension() {
-        is_svg = extension.eq_ignore_ascii_case("svg");
+    let _ = ComGuard::new();
+
+    let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
+    let file_path = to_pcwstr(icon);
+    let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
+    let frame = unsafe { decoder.GetFrame(0).unwrap() };
+    let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
+    unsafe {
+        format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).unwrap();
     }
 
-    if is_svg {
-        let svg_document = create_svg_from_path(
-            target,
-            &MenuSVG {
-                path: icon.clone(),
-                width: size,
-                height: size,
-            },
-        );
-        MenuImage::Svg(svg_document)
-    } else {
-        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-
-        let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
-        let file_path = to_pcwstr(icon);
-        let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
-        let frame = unsafe { decoder.GetFrame(0).unwrap() };
-        let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
-        unsafe {
-            format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).unwrap();
-        }
-
-        let bitmap = unsafe {
-            dc5.CreateBitmapFromWicBitmap(
-                &format_converter,
-                Some(&D2D1_BITMAP_PROPERTIES1 {
-                    pixelFormat: D2D1_PIXEL_FORMAT {
-                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-                    },
-                    ..Default::default()
-                }),
-            )
-            .unwrap()
-        };
-
-        MenuImage::Bitmap(bitmap)
+    unsafe {
+        dc5.CreateBitmapFromWicBitmap(
+            &format_converter,
+            Some(&D2D1_BITMAP_PROPERTIES1 {
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                ..Default::default()
+            }),
+        )
+        .unwrap()
     }
 }
 
@@ -248,7 +259,7 @@ pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) 
 
     let svg_data = fs::read(&svg.path).unwrap();
 
-    let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    let _ = ComGuard::new();
 
     match unsafe { SHCreateMemStream(Some(&svg_data)) } {
         Some(stream) => unsafe {
@@ -272,6 +283,29 @@ pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) 
             )
             .unwrap()
         },
+    }
+}
+
+pub(crate) fn create_bitmap_from_rgba(target: &ID2D1DCRenderTarget, rgba: Vec<u8>, width: u32, height: u32) -> ID2D1Bitmap1 {
+    let dc5 = get_device_context(target);
+
+    unsafe {
+        dc5.CreateBitmap(
+            windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_U {
+                width,
+                height,
+            },
+            Some(rgba.as_ptr() as _),
+            width * 4,
+            &D2D1_BITMAP_PROPERTIES1 {
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap()
     }
 }
 

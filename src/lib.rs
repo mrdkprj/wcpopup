@@ -61,6 +61,8 @@
 //! ```
 pub mod config;
 mod platform;
+use std::path::{Path, PathBuf};
+
 use async_std::channel::{unbounded, Receiver, Sender};
 #[cfg(target_os = "linux")]
 use config::Corner;
@@ -88,6 +90,42 @@ pub enum MenuItemType {
     Radio,
     Submenu,
     Separator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct RgbaIcon {
+    rgba: Vec<u8>,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MenuIconKind {
+    Path(PathBuf),
+    Rgba(RgbaIcon),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MenuIcon {
+    pub icon: MenuIconKind,
+}
+
+impl MenuIcon {
+    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+        Self {
+            icon: MenuIconKind::Path(path.as_ref().to_path_buf()),
+        }
+    }
+
+    pub fn from_rgba(rgba: Vec<u8>, width: u32, height: u32) -> Self {
+        Self {
+            icon: MenuIconKind::Rgba(RgbaIcon {
+                rgba,
+                width,
+                height,
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

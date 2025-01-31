@@ -4,12 +4,9 @@ use super::{
     util::{get_menu_data_mut, set_menu_data, toggle_radio},
     Menu,
 };
-use crate::MenuItemType;
+use crate::{MenuIcon, MenuItemType};
 use serde::{Deserialize, Serialize};
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicU16, Ordering},
-};
+use std::sync::atomic::{AtomicU16, Ordering};
 
 static UUID: AtomicU16 = AtomicU16::new(0);
 
@@ -24,7 +21,8 @@ pub struct MenuItem {
     pub submenu: Option<Menu>,
     pub checked: bool,
     pub disabled: bool,
-    pub icon: Option<PathBuf>,
+    pub visible: bool,
+    pub icon: Option<MenuIcon>,
     pub uuid: u16,
     pub index: i32,
     pub(crate) menu_window_handle: isize,
@@ -44,10 +42,10 @@ impl MenuItem {
         accelerator: &str,
         name: &str,
         checked: bool,
-        disabled: Option<bool>,
+        disabled: bool,
         menu_item_type: MenuItemType,
         submenu: Option<Menu>,
-        icon: Option<PathBuf>,
+        icon: Option<MenuIcon>,
     ) -> Self {
         Self {
             id: id.to_string(),
@@ -64,21 +62,11 @@ impl MenuItem {
             right: 0,
             bottom: 0,
             checked,
-            disabled: disabled.unwrap_or(false),
+            disabled,
+            visible: true,
             items: None,
             icon,
         }
-    }
-
-    pub fn set_disabled(&mut self, disabled: bool) {
-        self.disabled = disabled;
-
-        if self.menu_window_handle == 0 {
-            return;
-        }
-        let data = get_menu_data_mut(self.menu_window_handle);
-        data.items[self.index as usize].disabled = disabled;
-        set_menu_data(self.menu_window_handle, data);
     }
 
     pub fn set_label(&mut self, label: &str) {
@@ -92,7 +80,31 @@ impl MenuItem {
         set_menu_data(self.menu_window_handle, data);
     }
 
-    pub fn set_icon(&mut self, icon: Option<PathBuf>) {
+    pub fn set_disabled(&mut self, disabled: bool) {
+        self.disabled = disabled;
+
+        if self.menu_window_handle == 0 {
+            return;
+        }
+        let data = get_menu_data_mut(self.menu_window_handle);
+        data.items[self.index as usize].disabled = disabled;
+        set_menu_data(self.menu_window_handle, data);
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+
+        if self.menu_window_handle == 0 {
+            return;
+        }
+
+        let data = get_menu_data_mut(self.menu_window_handle);
+        data.items[self.index as usize].visible = visible;
+        recalculate(data);
+        set_menu_data(self.menu_window_handle, data);
+    }
+
+    pub fn set_icon(&mut self, icon: Option<MenuIcon>) {
         if self.menu_item_type == MenuItemType::Separator {
             return;
         }
@@ -119,7 +131,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
+    pub fn new_text_item(id: &str, label: &str, accelerator: Option<&str>, disabled: bool, icon: Option<MenuIcon>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -135,7 +147,8 @@ impl MenuItem {
             right: 0,
             bottom: 0,
             checked: false,
-            disabled: disabled.unwrap_or(false),
+            disabled,
+            visible: true,
             items: None,
             icon,
         }
@@ -143,7 +156,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_check_item(id: &str, label: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
+    pub fn new_check_item(id: &str, label: &str, accelerator: Option<&str>, checked: bool, disabled: bool, icon: Option<MenuIcon>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -159,13 +172,14 @@ impl MenuItem {
             right: 0,
             bottom: 0,
             checked,
-            disabled: disabled.unwrap_or(false),
+            disabled,
+            visible: true,
             items: None,
             icon,
         }
     }
 
-    pub fn new_radio_item(id: &str, label: &str, name: &str, accelerator: Option<&str>, checked: bool, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
+    pub fn new_radio_item(id: &str, label: &str, name: &str, accelerator: Option<&str>, checked: bool, disabled: bool, icon: Option<MenuIcon>) -> Self {
         Self {
             id: id.to_string(),
             label: label.to_string(),
@@ -181,7 +195,8 @@ impl MenuItem {
             right: 0,
             bottom: 0,
             checked,
-            disabled: disabled.unwrap_or(false),
+            disabled,
+            visible: true,
             items: None,
             icon,
         }
@@ -206,7 +221,7 @@ impl MenuItem {
 }
 
 impl MenuItem {
-    pub fn new_submenu_item(id: &str, label: &str, disabled: Option<bool>, icon: Option<PathBuf>) -> Self {
+    pub fn new_submenu_item(id: &str, label: &str, disabled: bool, icon: Option<MenuIcon>) -> Self {
         let mut item = MenuItem::new(0, id, label, "", "", false, disabled, MenuItemType::Submenu, None, icon);
         item.items = Some(Vec::new());
         item
@@ -239,8 +254,75 @@ impl MenuItem {
             bottom: 0,
             checked: false,
             disabled: false,
+            visible: true,
             items: None,
             icon: None,
         }
+    }
+}
+
+impl MenuItem {
+    pub fn builder(menu_item_type: MenuItemType) -> MenuItemBuilder {
+        MenuItemBuilder {
+            menu_item: MenuItem::new(0, "", "", "", "", false, false, menu_item_type, None, None),
+        }
+    }
+}
+
+pub struct MenuItemBuilder {
+    menu_item: MenuItem,
+}
+
+impl MenuItemBuilder {
+    pub fn id(mut self, id: &str) -> Self {
+        self.menu_item.id = id.to_string();
+        self
+    }
+
+    pub fn label(mut self, label: &str) -> Self {
+        self.menu_item.label = label.to_string();
+        self
+    }
+
+    pub fn accelerator(mut self, accelerator: &str) -> Self {
+        self.menu_item.accelerator = accelerator.to_string();
+        self
+    }
+
+    pub fn name(mut self, name: &str) -> Self {
+        self.menu_item.name = name.to_string();
+        self
+    }
+
+    pub fn submenu(mut self, items: Vec<MenuItem>) -> Self {
+        if self.menu_item.menu_item_type == MenuItemType::Submenu {
+            self.menu_item.items = Some(items);
+        }
+        self
+    }
+
+    pub fn checked(mut self, checked: bool) -> Self {
+        self.menu_item.checked = checked;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.menu_item.disabled = disabled;
+        self
+    }
+
+    pub fn visible(mut self, visible: bool) -> Self {
+        self.menu_item.visible = visible;
+        self
+    }
+
+    pub fn icon(mut self, icon: MenuIcon) -> Self {
+        self.menu_item.icon = Some(icon);
+        self
+    }
+
+    /// Build the [`MenuItem`].
+    pub fn build(self) -> MenuItem {
+        self.menu_item
     }
 }
