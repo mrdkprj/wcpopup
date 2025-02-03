@@ -295,21 +295,9 @@ impl Menu {
     }
 
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
-        unsafe {
-            let hwnd = hwnd!(self.window_handle);
-            let parent_hwnd = hwnd!(self.parent_window_handle);
-            let ancestor = GetAncestor(parent_hwnd, GA_ROOTOWNER);
-            let _ = SetWindowSubclass(
-                if ancestor.0.is_null() {
-                    parent_hwnd
-                } else {
-                    ancestor
-                },
-                Some(menu_owner_subclass_proc),
-                id,
-                Box::into_raw(Box::new(hwnd)) as _,
-            );
-        }
+        let hwnd = hwnd!(self.window_handle);
+
+        let _ = unsafe { SetWindowSubclass(get_parent_hwnd(self.parent_window_handle), Some(menu_owner_subclass_proc), id, Box::into_raw(Box::new(hwnd)) as _) };
     }
 
     fn start_popup(&self, x: i32, y: i32, size: Size, attach_thread: bool) {
@@ -374,6 +362,16 @@ impl Menu {
         }
 
         item
+    }
+}
+
+fn get_parent_hwnd(parent_window_handle: isize) -> HWND {
+    let parent_hwnd = hwnd!(parent_window_handle);
+    let ancestor = unsafe { GetAncestor(parent_hwnd, GA_ROOTOWNER) };
+    if ancestor.0.is_null() {
+        parent_hwnd
+    } else {
+        ancestor
     }
 }
 
@@ -450,7 +448,10 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             if data.menu_type == MenuType::Main {
                 free_library();
                 let _ = unsafe { RemovePropW(window, to_pcwstr(HOOK_PROP_NAME)) };
-                let _ = RemoveWindowSubclass(window, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
+                if let Ok(parent) = GetParent(window) {
+                    let hwnd = get_parent_hwnd(parent.0 as _);
+                    let _ = RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
+                }
             }
 
             #[cfg(feature = "accelerator")]
