@@ -48,7 +48,7 @@ impl Default for Config {
 ///   vertical_padding: 0,
 ///   horizontal_padding: 0,
 ///   item_vertical_padding: 8,
-///   item_horizontal_padding: 0,
+///   item_horizontal_padding: 20,
 ///   submenu_offset: -3
 ///   separator_size: 1,
 ///  ```
@@ -77,7 +77,7 @@ impl Default for MenuSize {
             vertical_padding: 0,
             horizontal_padding: 0,
             item_vertical_padding: 8,
-            item_horizontal_padding: 0,
+            item_horizontal_padding: 20,
             submenu_offset: -3,
             separator_size: 1,
         }
