@@ -218,7 +218,7 @@ pub enum FontWeight {
 }
 
 /// Icon settings.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IconSettings {
     /// SVG to override the default check-mark SVG for check/radio menu item.
     pub check_svg: Option<MenuSVG>,
@@ -228,6 +228,17 @@ pub struct IconSettings {
     pub reserve_icon_size: bool,
     /// Left and right margins of the icons set to menu items.
     pub horizontal_margin: Option<i32>,
+}
+
+impl Default for IconSettings {
+    fn default() -> Self {
+        Self {
+            check_svg: None,
+            arrow_svg: None,
+            reserve_icon_size: true,
+            horizontal_margin: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
