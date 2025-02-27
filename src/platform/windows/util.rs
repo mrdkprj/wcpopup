@@ -1,7 +1,7 @@
 use super::{
     create_write_factory,
     direct2d::{get_icon_space, get_text_metrics},
-    ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS,
+    ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH,
 };
 use once_cell::sync::Lazy;
 use std::{
@@ -110,6 +110,21 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
 
     let factory = create_write_factory();
 
+    /* Find the widest accelerator string */
+    let mut widest_accel = (0.0, "");
+    let mut cloned_items = Vec::new();
+    items.clone_into(&mut cloned_items);
+    let accels = cloned_items.iter().map(|i| i.accelerator.as_str());
+    for accel in accels {
+        if !accel.is_empty() {
+            let mut raw_text = encode_wide(accel);
+            let metrics = get_text_metrics(&factory, theme, config, &mut raw_text)?;
+            if metrics.width >= widest_accel.0 {
+                widest_accel = (metrics.width, accel);
+            }
+        }
+    }
+
     /* Calculate item top, left, bottom and menu size */
     for (index, item) in items.iter_mut().enumerate() {
         item.index = index as i32;
@@ -121,7 +136,7 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
 
         item.top = height;
         item.left = config.size.border_size + config.size.horizontal_padding;
-        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space)?;
+        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space, widest_accel.1)?;
         item.bottom = item.top + item_height;
 
         width = std::cmp::max(width, item_width);
@@ -138,7 +153,6 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
             item.left = -1;
             item.bottom = -1;
             item.right = -1;
-            continue;
         }
     }
 
@@ -165,20 +179,21 @@ pub(crate) fn recalculate(data: &mut MenuData) {
     data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
 }
 
-pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data: &MenuItem, theme: Theme, icon_space: IconSpace) -> Result<(i32, i32), Error> {
+pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, menu_item: &MenuItem, theme: Theme, icon_space: IconSpace, widest_accel: &str) -> Result<(i32, i32), Error> {
     let mut width = 0;
     let mut height = 0;
 
-    match item_data.menu_item_type {
+    match menu_item.menu_item_type {
         MenuItemType::Separator => {
             height += config.size.separator_size;
             height += config.size.item_vertical_padding * 2;
         }
 
         _ => {
-            let mut raw_text = encode_wide(&item_data.label);
-            if !item_data.accelerator.is_empty() {
-                raw_text.extend(encode_wide(&item_data.accelerator));
+            let mut raw_text = encode_wide(&menu_item.label);
+            /* Set widest accelerator string */
+            if !widest_accel.is_empty() {
+                raw_text.extend(encode_wide(widest_accel));
             }
 
             let metrics = get_text_metrics(factory, theme, config, &mut raw_text)?;
@@ -196,11 +211,17 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, item_data:
             width = metrics.width as i32;
             width += config.size.item_horizontal_padding * 2;
             width += icon_space.left.width + icon_space.left.lmargin + icon_space.left.rmargin;
-            width += icon_space.mid.width + icon_space.mid.lmargin + icon_space.mid.rmargin;
+
+            /* Add space for icon only when icon is set or reserve_icon_size is true */
+            if menu_item.icon.is_some() || config.icon.as_ref().unwrap().reserve_icon_size {
+                width += icon_space.mid.width + icon_space.mid.lmargin + icon_space.mid.rmargin;
+            }
+
             width += icon_space.right.width + icon_space.right.lmargin + icon_space.right.rmargin;
-            /* extra padding for accelerator */
-            if !item_data.accelerator.is_empty() {
-                width += (config.font.dark_font_size.max(config.font.light_font_size) * 2.5) as i32;
+
+            /* Add space for accelerator */
+            if !menu_item.accelerator.is_empty() {
+                width += MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN;
             }
         }
     }

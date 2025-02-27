@@ -1,4 +1,7 @@
-use super::{get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme};
+use super::{
+    get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme, DEFAULT_ICON_MARGIN,
+    MIN_BUTTON_WIDTH,
+};
 use crate::{MenuIcon, MenuIconKind, MenuItemType};
 use std::{fs, path::PathBuf};
 use windows::{
@@ -26,9 +29,6 @@ use windows::{
         UI::Shell::SHCreateMemStream,
     },
 };
-
-const MIN_BUTTON_WIDTH: i32 = 6;
-const DEFAULT_ICON_MARGIN: i32 = 5;
 
 #[derive(PartialEq)]
 pub(crate) enum TextAlignment {
@@ -393,55 +393,37 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
     let check_svg_size = unsafe { check_svg.GetViewportSize().width } as i32;
     let submenu_svg_size = unsafe { submenu_svg.GetViewportSize().width } as i32;
 
-    let icon_margin = if let Some(margin) = icon_settings.horizontal_margin {
-        MIN_BUTTON_WIDTH + margin
-    } else {
-        MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN
-    };
-
-    let default_button_size = IconSize {
-        width: MIN_BUTTON_WIDTH * 2,
-        lmargin: MIN_BUTTON_WIDTH,
-        rmargin: MIN_BUTTON_WIDTH,
-    };
+    let default_margin = MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN;
 
     let left = match left_button {
-        LeftButton::Check => IconSize {
+        /* No left margin which is set by MenuItem horizontal padding */
+        LeftButton::CheckAndIcon | LeftButton::Check => IconSize {
             width: check_svg_size,
-            lmargin: icon_margin,
-            rmargin: icon_margin,
+            lmargin: 0,
+            rmargin: default_margin,
         },
-        LeftButton::CheckAndIcon => IconSize {
-            width: check_svg_size,
-            lmargin: icon_margin,
-            rmargin: icon_margin,
-        },
-        LeftButton::Icon => IconSize::default(),
-        LeftButton::None => default_button_size,
+        LeftButton::Icon | LeftButton::None => IconSize::default(),
     };
 
     let mid = match left_button {
-        LeftButton::Icon => IconSize {
+        /* When horizontal_margin is set, use it for left and right margin */
+        LeftButton::CheckAndIcon | LeftButton::Icon => IconSize {
             width: check_svg_size,
-            lmargin: icon_margin,
-            rmargin: icon_margin,
+            lmargin: icon_settings.horizontal_margin.unwrap_or(0),
+            rmargin: icon_settings.horizontal_margin.unwrap_or(default_margin),
         },
-        LeftButton::CheckAndIcon => IconSize {
-            width: check_svg_size,
-            lmargin: 0,
-            rmargin: icon_margin,
-        },
-        LeftButton::None | LeftButton::Check => IconSize::default(),
+        LeftButton::Check | LeftButton::None => IconSize::default(),
     };
 
     let right = if has_submenu {
+        /* Double left margin for arrow icon. No right margin which is set by MenuItem horizontal padding */
         IconSize {
             width: submenu_svg_size,
-            lmargin: icon_margin,
-            rmargin: icon_margin,
+            lmargin: default_margin * 2,
+            rmargin: 0,
         }
     } else {
-        default_button_size
+        IconSize::default()
     };
 
     IconSpace {

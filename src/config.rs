@@ -169,7 +169,7 @@ pub const DEFAULT_LIGHT_COLOR_SCHEME: ColorScheme = ColorScheme {
 /// ## Default.
 ///
 ///  ```no_run
-///   font_family: "Yu Gothic UI",
+///   font_family: "Segoe UI",
 ///   dark_font_size: 12.0,
 ///   light_font_size: 12.0,
 ///   dark_font_weight: Normal,
@@ -191,7 +191,7 @@ pub struct MenuFont {
 impl Default for MenuFont {
     fn default() -> Self {
         Self {
-            font_family: String::from("Yu Gothic UI"),
+            font_family: String::from("Segoe UI"),
             dark_font_size: 12.0,
             light_font_size: 12.0,
             dark_font_weight: FontWeight::Normal,

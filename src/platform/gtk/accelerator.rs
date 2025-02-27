@@ -109,19 +109,24 @@ pub(crate) fn connect_accelerator(gtk_menu: &gtk::Menu, gtk_menu_handle: isize, 
 
         accel_mods &= !(ModifierType::MOD2_MASK | ModifierType::MOD3_MASK | ModifierType::MOD4_MASK | ModifierType::MOD5_MASK);
 
-        let quark = accelerator_name(*accel_key, accel_mods);
-        let accel_quark = Quark::from_str(quark.unwrap());
+        if let Some(quark) = accelerator_name(*accel_key, accel_mods) {
+            let accel_quark = Quark::from_str(quark);
 
-        let data = get_menu_data(gtk_menu_handle);
-        let accel_group = to_accel_group(data.accel_group_handle.unwrap());
-        let parent = to_gtk_window(gtk_window_handle);
-        let result = accel_group.activate(accel_quark, &parent, *accel_key, accel_mods);
+            let data = get_menu_data(gtk_menu_handle);
+            if let Some(accel_group_handle) = data.accel_group_handle {
+                let accel_group = to_accel_group(accel_group_handle);
+                let parent = to_gtk_window(gtk_window_handle);
+                let result = accel_group.activate(accel_quark, &parent, *accel_key, accel_mods);
 
-        if result {
-            memu.hide();
-            Propagation::Stop
-        } else {
-            Propagation::Proceed
+                if result {
+                    memu.hide();
+                    return Propagation::Stop;
+                } else {
+                    return Propagation::Proceed;
+                }
+            }
         }
+
+        Propagation::Proceed
     });
 }

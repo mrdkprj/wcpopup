@@ -86,17 +86,6 @@ pub(crate) fn to_font_weight(weight: FontWeight) -> u32 {
     }
 }
 
-pub(crate) fn to_font_weight_string<'a>(weight: u32) -> &'a str {
-    match weight {
-        100 => "Thin",
-        300 => "Light",
-        400 => "Regular",
-        500 => "Medium",
-        700 => "Bold",
-        _ => "Regular",
-    }
-}
-
 pub(crate) fn is_sys_dark() -> bool {
     if let Some(settings) = gtk::Settings::default() {
         if let Some(theme_name) = settings.gtk_theme_name() {

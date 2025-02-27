@@ -59,6 +59,7 @@ pub(crate) struct MenuData {
     pub(crate) haccel: Option<Rc<HACCEL>>,
     #[cfg(feature = "accelerator")]
     pub(crate) accelerators: HashMap<u16, String>,
+    pub(crate) icon_size: i32,
 }
 
 /// Builder to create Menu.
@@ -370,6 +371,7 @@ impl MenuBuilder {
             create_submenu_svg(&dc_render_target, &self.config)
         };
 
+        let icon_size = unsafe { check_svg_doc.GetViewportSize().width } as _;
         let icon_space = get_icon_space(&self.items, self.config.icon.as_ref().unwrap(), &check_svg_doc, &submenu_svg_doc);
         let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
 
@@ -380,7 +382,7 @@ impl MenuBuilder {
         let mut icon_map = HashMap::new();
         for item in &self.items {
             if let Some(icon) = &item.icon {
-                let bitmap = create_menu_image(&dc_render_target, icon, icon_space.mid.width);
+                let bitmap = create_menu_image(&dc_render_target, icon, icon_size);
                 icon_map.insert(item.uuid, bitmap);
             }
         }
@@ -413,6 +415,7 @@ impl MenuBuilder {
             submenu_svg: submenu_svg_doc,
             popup_info: None,
             icon_map,
+            icon_size,
         };
 
         if is_main_menu {

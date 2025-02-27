@@ -1,18 +1,14 @@
 use super::{
     collect_menu_items, from_gtk_menu_item, get_icon_menu_css, get_menu_data, get_menu_item_data_mut, set_menu_item_data,
-    style::{get_menu_item_css, get_rgba_icon_menu_css, get_widget_name},
+    style::{get_hidden_image_css, get_menu_item_css, get_rgba_icon_menu_css, get_widget_name},
     to_gtk_menu_item, Config, Menu, SubmenuData,
 };
-use crate::{
-    platform::platform_impl::{to_font_weight, to_font_weight_string},
-    InnerMenuEvent, MenuEvent, MenuIcon, MenuIconKind, MenuItemType,
-};
+use crate::{InnerMenuEvent, MenuEvent, MenuIcon, MenuIconKind, MenuItemType};
 use gtk::{
     ffi::{gtk_style_context_add_provider_for_screen, GtkStyleProvider},
     gdk::ffi::gdk_screen_get_default,
     gdk_pixbuf::{Colorspace, Pixbuf},
     glib::{translate::ToGlibPtr, Cast, IsA},
-    pango::FontDescription,
     prelude::{AccelLabelExt, BoxExt, CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, StyleContextExt, WidgetExt},
     AccelLabel, CssProvider, Orientation, StyleProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
@@ -341,8 +337,8 @@ pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::Rad
 pub(crate) fn toggle_icon(gtk_menu_handle: isize) {
     let data = get_menu_data(gtk_menu_handle);
     let menu_items = collect_menu_items(gtk_menu_handle);
-    let has_check = menu_items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
     let has_icon = menu_items.iter().any(|item| item.icon.is_some());
+
     for menu_item in menu_items {
         if menu_item.menu_item_type != MenuItemType::Separator {
             let gtk_menu_item = to_gtk_menu_item(menu_item.gtk_menu_item_handle);
@@ -350,13 +346,12 @@ pub(crate) fn toggle_icon(gtk_menu_handle: isize) {
 
             /*
                 Use icon margin if
-                - Menu has no check item but has any icon item
                 - Menu has any icon item and reserve_icon_size is true
                 - This item has icon
             */
             if !has_icon {
                 image_item.hide();
-            } else if (!has_check && has_icon) || data.config.icon.as_ref().unwrap().reserve_icon_size || menu_item.icon.is_some() {
+            } else if data.config.icon.as_ref().unwrap().reserve_icon_size || menu_item.icon.is_some() {
                 image_item.show();
             }
         }
@@ -369,22 +364,10 @@ fn get_image_item(gtk_menu_item: &gtk::MenuItem) -> Widget {
     box_container.children().first().unwrap().clone()
 }
 
-fn create_icon_label(label: &str, accelerator: &str, menu_icon: &Option<MenuIcon>, config: &Config, accel_widget: Option<&impl IsA<Widget>>) -> gtk::Box {
+fn create_icon_label(label: &str, menu_icon: &Option<MenuIcon>, config: &Config, accel_widget: Option<&impl IsA<Widget>>) -> gtk::Box {
     let box_container = gtk::Box::new(Orientation::Horizontal, 6);
     let accel_label = AccelLabel::builder().label(label).xalign(0.0).build();
     accel_label.set_accel_widget(accel_widget);
-
-    if !accelerator.is_empty() {
-        /* When Image + Label + Accelerator, prevent Label width from being too small */
-        let layout = accel_label.create_pango_layout(Some(label));
-        let weight = to_font_weight_string(std::cmp::max(to_font_weight(config.font.dark_font_weight), to_font_weight(config.font.light_font_weight)));
-        let size = config.font.dark_font_size.max(config.font.light_font_size);
-        let font = format!(r#""{}" Normal {} {}"#, config.font.font_family, weight, size);
-        let desc = FontDescription::from_string(&font);
-        layout.set_font_description(Some(&desc));
-        let (width, _) = layout.pixel_size();
-        accel_label.set_width_request(width);
-    }
     accel_label.show();
 
     /* Initially hide Image */
@@ -404,7 +387,9 @@ fn create_icon_label(label: &str, accelerator: &str, menu_icon: &Option<MenuIcon
             }
         }
     } else {
-        gtk::Image::new()
+        let image = gtk::Image::new();
+        apply_empty_image_css(&image, config);
+        image
     };
 
     box_container.pack_start(&image, false, false, 0);
@@ -424,6 +409,13 @@ fn apply_image_css(image: &impl IsA<Widget>, menu_icon: &MenuIcon, config: &Conf
     image.style_context().add_provider(&css_provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
+fn apply_empty_image_css(image: &impl IsA<Widget>, config: &Config) {
+    let css_provider = CssProvider::new();
+    let css = get_hidden_image_css(config);
+    css_provider.load_from_data(css.as_bytes()).unwrap();
+    image.style_context().add_provider(&css_provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+}
+
 pub(crate) fn create_gtk_menu_item(
     gtk_menu_handle: isize,
     item: &mut MenuItem,
@@ -434,7 +426,7 @@ pub(crate) fn create_gtk_menu_item(
     let gtk_menu_item = match item.menu_item_type {
         MenuItemType::Text => {
             let gtk_menu_item = gtk::MenuItem::builder().sensitive(!item.disabled).build();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
             item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
@@ -443,7 +435,7 @@ pub(crate) fn create_gtk_menu_item(
         MenuItemType::Checkbox => {
             let check_menu_item = gtk::CheckMenuItem::builder().sensitive(!item.disabled).active(item.checked).build();
             let gtk_menu_item = check_menu_item.upcast::<gtk::MenuItem>();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
             item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
@@ -460,7 +452,7 @@ pub(crate) fn create_gtk_menu_item(
                 }
             }
             let gtk_menu_item = radio_menu_item.upcast::<gtk::MenuItem>();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
             item.gtk_menu_item_handle = from_gtk_menu_item(&gtk_menu_item);
@@ -479,7 +471,7 @@ pub(crate) fn create_gtk_menu_item(
             }
 
             let gtk_menu_item = gtk::MenuItem::builder().sensitive(!item.disabled).build();
-            let box_container = create_icon_label(&item.label, &item.accelerator, &item.icon, config, Some(&gtk_menu_item));
+            let box_container = create_icon_label(&item.label, &item.icon, config, Some(&gtk_menu_item));
             gtk_menu_item.add(&box_container);
 
             gtk_menu_item.set_submenu(Some(&submedata.gtk_submenu));

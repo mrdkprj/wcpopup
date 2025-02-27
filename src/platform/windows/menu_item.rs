@@ -116,10 +116,10 @@ impl MenuItem {
 
         let data = get_menu_data_mut(self.menu_window_handle);
 
-        data.icon_map.remove(&self.uuid);
+        let _ = data.icon_map.remove(&self.uuid);
 
         if let Some(icon) = &self.icon {
-            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
+            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size);
             data.icon_map.insert(self.uuid, bitmap);
         }
 

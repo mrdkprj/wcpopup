@@ -62,6 +62,9 @@ const FADE_EFFECT_TIME: u32 = 120;
 
 const WM_INACTIVATE: u32 = WM_APP + 0x0004;
 
+pub(crate) const MIN_BUTTON_WIDTH: i32 = 6;
+pub(crate) const DEFAULT_ICON_MARGIN: i32 = 5;
+
 /// Context Menu.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Menu {
@@ -218,6 +221,9 @@ impl Menu {
     /// Removes the MenuItem at the specified index.
     pub fn remove_at(&mut self, index: u32) {
         let data = get_menu_data_mut(self.window_handle);
+        if data.items.is_empty() {
+            return;
+        }
         if index as usize > data.items.len() - 1 {
             return;
         }
@@ -380,7 +386,7 @@ fn refresh_menu_icon(data: &mut MenuData, item: &MenuItem, should_remove: bool) 
         if should_remove {
             let _ = data.icon_map.remove(&item.uuid);
         } else {
-            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_space.left.width);
+            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size);
             data.icon_map.insert(item.uuid, bitmap);
         }
     }
@@ -1038,25 +1044,27 @@ fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorS
 }
 
 fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    /* Keep space for check, icon and submenu */
+    /* Always keep space for check */
     let check_margin = data.icon_space.left.lmargin + data.icon_space.left.width + data.icon_space.left.rmargin;
+
     /*
         Use icon margin if
-        - Menu has no check item but has any icon item
         - reserve_icon_size is true
         - This item has icon
     */
-    let icon_margin = if (check_margin == 0 && !data.icon_map.is_empty()) || data.config.icon.as_ref().unwrap().reserve_icon_size || item.icon.is_some() {
-        data.icon_space.mid.width + data.icon_space.mid.lmargin + data.icon_space.mid.rmargin
+    let icon_margin = if data.config.icon.as_ref().unwrap().reserve_icon_size || item.icon.is_some() {
+        data.icon_space.mid.lmargin + data.icon_space.mid.width + data.icon_space.mid.rmargin
     } else {
         0
     };
-    /* Use only right icon margin for items other than submenu */
+
+    /* No margin for items other than submenu */
     let arrow_margin = if item.menu_item_type == MenuItemType::Submenu {
         data.icon_space.right.lmargin + data.icon_space.right.width + data.icon_space.right.rmargin
     } else {
-        data.icon_space.right.rmargin
+        0
     };
+
     let text_rect = RECT {
         left: item_rect.left + check_margin + icon_margin,
         top: item_rect.top,
@@ -1073,6 +1081,7 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
     } else {
         scheme.color
     };
+
     let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(color), None) }?;
 
     unsafe { data.dc_render_target.DrawText(encode_wide(&item.label).as_mut(), &format, &text_2d_rect, &brush, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL) };
@@ -1092,12 +1101,11 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
 }
 
 fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let margin = data.icon_space.right.lmargin;
     let icon_width = data.icon_space.right.width;
     let arrow_rect = RECT {
-        left: item_rect.right - (margin + icon_width),
+        left: item_rect.right - icon_width,
         top: item_rect.top,
-        right: item_rect.right - margin,
+        right: item_rect.right,
         bottom: item_rect.top + icon_width,
     };
 
@@ -1131,7 +1139,7 @@ fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<
     };
     let rect = to_2d_rect(&separator_rect);
 
-    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None).unwrap() };
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.separator), None).unwrap() };
 
     /* Add 0.5 to disable antialiasing for line */
     unsafe {

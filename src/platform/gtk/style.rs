@@ -147,17 +147,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
 
     let weight = to_font_weight(config.font.dark_font_weight);
 
-    let icon_margin = if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
-        format!(
-            r#"
-                margin-right: {margin}px;
-                margin-left: {margin}px;
-            "#,
-        )
-    } else {
-        String::new()
-    };
-
     let font_size = config.font.dark_font_size.max(config.font.light_font_size);
 
     let check = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
@@ -222,7 +211,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             menuitem#{DARK_WIDGET_NAME} check:checked,
             menuitem#{LIGHT_WIDGET_NAME} check:checked{{
                 {}
-                {}
             }}
             menuitem#{DARK_WIDGET_NAME} check {{
                 color: {};
@@ -241,7 +229,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
 
             menuitem#{DARK_WIDGET_NAME} arrow,
             menuitem#{LIGHT_WIDGET_NAME} arrow {{
-                {}
                 {}
             }}
             menu#{DARK_WIDGET_NAME} menuitem#{DARK_WIDGET_NAME} arrow {{
@@ -311,7 +298,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.accelerator),
         /* check */
         check,
-        icon_margin,
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
@@ -321,7 +307,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.hover_background_color),
         /* arrow */
         arrow,
-        icon_margin,
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
@@ -348,32 +333,6 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.dark.separator),
         to_rgba_string(config.color.light.separator),
     )
-}
-
-pub(crate) fn get_rgba_icon_menu_css(rgba_icon: &RgbaIcon, config: &Config) -> String {
-    let width = rgba_icon.width;
-    let height = rgba_icon.height;
-    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
-        format!(
-            r#"
-                menuitem image {{
-                    margin-left: {margin}px;
-                    margin-right: {margin}px;
-                    min-width: {width}px;
-                    min-height: {height}px;
-                }}
-            "#
-        )
-    } else {
-        format!(
-            r#"
-                menuitem image {{
-                    min-width: {width}px;
-                    min-height: {height}px;
-                }}
-            "#
-        )
-    }
 }
 
 pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
@@ -413,5 +372,46 @@ pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
                 }}
             "#
         )
+    }
+}
+
+pub(crate) fn get_rgba_icon_menu_css(rgba_icon: &RgbaIcon, config: &Config) -> String {
+    let width = rgba_icon.width;
+    let height = rgba_icon.height;
+    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+        format!(
+            r#"
+                menuitem image {{
+                    margin-left: {margin}px;
+                    margin-right: {margin}px;
+                    min-width: {width}px;
+                    min-height: {height}px;
+                }}
+            "#
+        )
+    } else {
+        format!(
+            r#"
+                menuitem image {{
+                    min-width: {width}px;
+                    min-height: {height}px;
+                }}
+            "#
+        )
+    }
+}
+
+pub(crate) fn get_hidden_image_css(config: &Config) -> String {
+    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+        format!(
+            r#"
+                menuitem image {{
+                    margin-left: {margin}px;
+                    margin-right: {margin}px;
+                }}
+            "#
+        )
+    } else {
+        String::new()
     }
 }
