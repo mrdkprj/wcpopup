@@ -27,6 +27,8 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
+#[cfg(feature = "webview2")]
+pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(to_pcwstr(concat!(env!("CARGO_MANIFEST_DIR"), "\\win_hook.dll"))).unwrap_or_default().0 as _ });
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -264,6 +266,8 @@ pub(crate) fn is_win11() -> bool {
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
+    #[cfg(feature = "webview2")]
+    let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
 }
 
 pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {

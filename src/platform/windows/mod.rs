@@ -327,8 +327,7 @@ impl Menu {
         unsafe { SetPropW(hwnd, to_pcwstr(HOOK_PROP_NAME), Some(HANDLE(self.window_handle as _))).unwrap() };
 
         /* Set hooks */
-        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, menu_thread_id).unwrap() };
-        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook), None, menu_thread_id).unwrap() };
+        let (keyboard_hook, mouse_hook) = create_hooks(menu_thread_id);
 
         let info = PopupInfo {
             window_handle: self.window_handle,
@@ -371,6 +370,36 @@ impl Menu {
     }
 }
 
+fn create_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
+    if cfg!(feature = "webview2") {
+        let focus_wiun = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() };
+        let focus_wiun_thread = unsafe { GetWindowThreadProcessId(focus_wiun, None) };
+        #[cfg(feature = "webview2")]
+        let dll = windows::Win32::Foundation::HMODULE(*HOOK_DLL as _);
+        let dll = windows::Win32::Foundation::HMODULE(0 as _);
+
+        let keyboard_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<std::option::Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(
+                windows::Win32::System::LibraryLoader::GetProcAddress(dll, windows::core::PCSTR("keyboard_hook_proc\0".as_ptr())),
+            )
+        };
+        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc_global), Some(dll.into()), focus_wiun_thread).unwrap() };
+
+        let mouse_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<std::option::Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(
+                windows::Win32::System::LibraryLoader::GetProcAddress(dll, windows::core::PCSTR("mouse_hook_proc\0".as_ptr())),
+            )
+        };
+        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc_global), Some(dll.into()), focus_wiun_thread).unwrap() };
+
+        (keyboard_hook, mouse_hook)
+    } else {
+        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc), None, menu_thread_id).unwrap() };
+        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc), None, menu_thread_id).unwrap() };
+        (keyboard_hook, mouse_hook)
+    }
+}
+
 fn get_parent_hwnd(parent_window_handle: isize) -> HWND {
     let parent_hwnd = hwnd!(parent_window_handle);
     let ancestor = unsafe { GetAncestor(parent_hwnd, GA_ROOTOWNER) };
@@ -407,7 +436,7 @@ fn set_capture(window_handle: isize) {
     let _ = unsafe { SetCursor(Some(cursor)) };
 }
 
-unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     /* Prevent keyboard input while Menu is open */
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
@@ -420,7 +449,7 @@ unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPAR
     CallNextHookEx(None, ncode, wparam, lparam)
 }
 
-unsafe extern "system" fn mouse_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
         let data = unsafe { GetPropW(capture_window, to_pcwstr(HOOK_PROP_NAME)) };
