@@ -12,6 +12,9 @@ keywords = [
 ]
 license = "MIT"
 repository = "https://github.com/mrdkprj/wcpopup"
+include = [
+  "win_hook.dll"
+]
 exclude = [
     "/assets"
 ]
