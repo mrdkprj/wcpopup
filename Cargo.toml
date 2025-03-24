@@ -19,6 +19,7 @@ exclude = [
 [features]
 default = []
 "accelerator" = []
+"webview2" = []
 
 [package.metadata.docs.rs]
 targets = [
