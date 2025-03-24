@@ -28,7 +28,7 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 #[cfg(feature = "webview2")]
-pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(to_pcwstr(concat!(env!("CARGO_MANIFEST_DIR"), "\\win_hook.dll"))).unwrap_or_default().0 as _ });
+pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(to_pcwstr(env!("PROJECT_B_DLL"))).unwrap_or_default().0 as _ });
 
 macro_rules! hwnd {
     ($expression:expr) => {
