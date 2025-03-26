@@ -329,7 +329,8 @@ impl Menu {
         let _ = unsafe { SetWindowPos(hwnd, Some(HWND_TOP), pt.x, pt.y, size.width, size.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
 
         /* Set menu hwnd to property to be used in keyboard hook */
-        unsafe { SetPropW(hwnd, to_pcwstr(HOOK_PROP_NAME), Some(HANDLE(self.window_handle as _))).unwrap() };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
 
         /* Set hooks */
         let (keyboard_hook, mouse_hook) = create_hooks(menu_thread_id);
@@ -490,7 +491,8 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
             if data.menu_type == MenuType::Main {
                 free_library();
-                let _ = unsafe { RemovePropW(window, to_pcwstr(HOOK_PROP_NAME)) };
+                let prop_name = encode_wide(HOOK_PROP_NAME);
+                let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
                 if let Ok(parent) = GetParent(window) {
                     let hwnd = get_parent_hwnd(parent.0 as _);
                     let _ = RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
@@ -789,7 +791,8 @@ fn finish_popup(info: &PopupInfo) {
 
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 
-    let _ = unsafe { RemovePropW(hwnd, to_pcwstr(HOOK_PROP_NAME)) };
+    let prop_name = encode_wide(HOOK_PROP_NAME);
+    let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr())) };
 
     /* Unhook hooks */
     let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as _)) };

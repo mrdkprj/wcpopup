@@ -28,7 +28,11 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 #[cfg(feature = "webview2")]
-pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(to_pcwstr(env!("WIN_HOOK_DLL"))).unwrap_or_default().0 as _ });
+pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
+    println!("{:?}", std::env::var("WIN_HOOK_DLL"));
+    let dll_path = encode_wide(std::env::var("WIN_HOOK_DLL").unwrap_or_default());
+    LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
+});
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -62,10 +66,6 @@ pub(crate) fn set_menu_data(window_handle: isize, data: &mut MenuData) {
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
-}
-
-pub(crate) fn to_pcwstr(string: impl AsRef<std::ffi::OsStr>) -> PCWSTR {
-    PCWSTR::from_raw(encode_wide(string).as_ptr())
 }
 
 #[allow(dead_code)]

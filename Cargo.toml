@@ -20,9 +20,9 @@ exclude = [
 ]
 
 [features]
-default = []
+default = ["webview2"]
 "accelerator" = []
-"webview2" = []
+"webview2" = ["dep:win_hook"]
 
 [package.metadata.docs.rs]
 targets = [
@@ -67,6 +67,11 @@ features = [
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-numerics]
 version = "0.1.1"
+
+[target.'cfg(target_os = "windows")'.dependencies.win_hook]
+git = "https://github.com/mrdkprj/win_hook.git"
+rev = "7b1abb929e5ef1a4469a3d952f158d91ada0e409"
+optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.gtk]
 version = "0.18.0"

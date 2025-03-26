@@ -1,10 +1,11 @@
-use std::env;
-use std::fs;
-use std::path::PathBuf;
+use std::{env, fs, path::PathBuf};
 
 fn main() {
+    println!("cargo::rerun-if-changed=build.rs");
+
+    let dll_src = PathBuf::from(std::env::var("DEP_WCPOPUPHOOK_DLL").unwrap());
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    let dll_src = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "\\win_hook.dll"));
     let dll_dest = out_dir.join("win_hook.dll");
 
     let msg = format!("Failed to copy DLL:{}", out_dir.to_str().unwrap());
