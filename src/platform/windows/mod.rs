@@ -448,7 +448,8 @@ unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam:
     /* Prevent keyboard input while Menu is open */
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
-        let data = unsafe { GetPropW(capture_window, to_pcwstr(HOOK_PROP_NAME)) };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(prop_name.as_ptr())) };
 
         unsafe { PostMessageW(Some(HWND(data.0)), WM_KEYDOWN, wparam, lparam).unwrap() };
         return LRESULT(1);
@@ -461,7 +462,8 @@ unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam:
 unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
-        let data = unsafe { GetPropW(capture_window, to_pcwstr(HOOK_PROP_NAME)) };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(prop_name.as_ptr())) };
 
         match wparam.0 as u32 {
             /* Do not direct buttondown event since it is sent to default_window_proc */

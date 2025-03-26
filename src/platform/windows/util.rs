@@ -29,8 +29,7 @@ use windows::{
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 #[cfg(feature = "webview2")]
 pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
-    println!("{:?}", std::env::var("WIN_HOOK_DLL"));
-    let dll_path = encode_wide(std::env::var("WIN_HOOK_DLL").unwrap_or_default());
+    let dll_path = encode_wide(env!("WIN_HOOK_DLL"));
     LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
 });
 

@@ -12,15 +12,12 @@ keywords = [
 ]
 license = "MIT"
 repository = "https://github.com/mrdkprj/wcpopup"
-include = [
-  "win_hook.dll"
-]
 exclude = [
     "/assets"
 ]
 
 [features]
-default = ["webview2"]
+default = []
 "accelerator" = []
 "webview2" = ["dep:win_hook"]
 
