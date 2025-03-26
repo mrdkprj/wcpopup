@@ -2295,11 +2295,19 @@ dependencies = [
  "once_cell",
  "serde",
  "tao",
- "win_hook",
+ "wcpopup_win_hook",
  "windows 0.60.0",
  "windows-numerics",
  "windows-version",
  "wry",
+]
+
+[[package]]
+name = "wcpopup_win_hook"
+version = "0.1.0"
+source = "git+https://github.com/mrdkprj/win_hook.git?rev=b5e426bf337f8adfd05b1f90aae85307834f56db#b5e426bf337f8adfd05b1f90aae85307834f56db"
+dependencies = [
+ "windows 0.60.0",
 ]
 
 [[package]]
@@ -2390,14 +2398,6 @@ dependencies = [
  "thiserror",
  "windows 0.58.0",
  "windows-core 0.58.0",
-]
-
-[[package]]
-name = "win_hook"
-version = "0.1.0"
-source = "git+https://github.com/mrdkprj/win_hook.git?rev=7b1abb929e5ef1a4469a3d952f158d91ada0e409#7b1abb929e5ef1a4469a3d952f158d91ada0e409"
-dependencies = [
- "windows 0.60.0",
 ]
 
 [[package]]

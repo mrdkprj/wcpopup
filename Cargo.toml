@@ -19,7 +19,7 @@ exclude = [
 [features]
 default = []
 "accelerator" = []
-"webview2" = ["dep:win_hook"]
+"webview2" = ["dep:wcpopup_win_hook"]
 
 [package.metadata.docs.rs]
 targets = [
@@ -65,9 +65,9 @@ features = [
 [target.'cfg(target_os = "windows")'.dependencies.windows-numerics]
 version = "0.1.1"
 
-[target.'cfg(target_os = "windows")'.dependencies.win_hook]
+[target.'cfg(target_os = "windows")'.dependencies.wcpopup_win_hook]
 git = "https://github.com/mrdkprj/win_hook.git"
-rev = "7b1abb929e5ef1a4469a3d952f158d91ada0e409"
+rev = "b5e426bf337f8adfd05b1f90aae85307834f56db"
 optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.gtk]
