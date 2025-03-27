@@ -14,13 +14,14 @@ use std::mem::size_of;
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use util::*;
-use windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR;
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
-#[cfg(not(feature = "webview2"))]
-use windows::Win32::UI::{
-    Input::KeyboardAndMouse::GetCapture,
-    WindowsAndMessaging::{CallNextHookEx, GetPropW},
+use windows::Win32::{
+    Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+    UI::{
+        Input::KeyboardAndMouse::GetCapture,
+        WindowsAndMessaging::{CallNextHookEx, GetPropW},
+    },
 };
 use windows::{
     core::{w, Error, PCWSTR},
@@ -55,7 +56,6 @@ use windows::{
         },
     },
 };
-
 use windows_numerics::Matrix3x2;
 
 const HOOK_PROP_NAME: &str = "WCPOPUP_KEYBOARD_HOOK";
@@ -333,7 +333,10 @@ impl Menu {
         unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
 
         /* Set hooks */
+        #[cfg(feature = "webview")]
         let (keyboard_hook, mouse_hook) = create_hooks(menu_thread_id);
+        #[cfg(not(feature = "webview"))]
+        let (keyboard_hook, mouse_hook) = create_local_hooks(menu_thread_id);
 
         let info = PopupInfo {
             window_handle: self.window_handle,
@@ -376,32 +379,36 @@ impl Menu {
     }
 }
 
-#[cfg(feature = "webview2")]
-fn create_hooks(_menu_thread_id: u32) -> (HHOOK, HHOOK) {
-    let focus_wiun = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetFocus() };
-    let focus_wiun_thread = unsafe { GetWindowThreadProcessId(focus_wiun, None) };
-
-    let dll = windows::Win32::Foundation::HMODULE(*HOOK_DLL as _);
-
-    let keyboard_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
-        std::mem::transmute::<std::option::Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(
-            windows::Win32::System::LibraryLoader::GetProcAddress(dll, windows::core::PCSTR("keyboard_hook_proc\0".as_ptr())),
-        )
+#[cfg(feature = "webview")]
+fn create_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
+    use windows::{
+        core::PCSTR,
+        Win32::{Foundation::HMODULE, System::LibraryLoader::GetProcAddress, UI::Input::KeyboardAndMouse::GetFocus},
     };
-    let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc_global), Some(dll.into()), focus_wiun_thread).unwrap() };
 
-    let mouse_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
-        std::mem::transmute::<std::option::Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(
-            windows::Win32::System::LibraryLoader::GetProcAddress(dll, windows::core::PCSTR("mouse_hook_proc\0".as_ptr())),
-        )
-    };
-    let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc_global), Some(dll.into()), focus_wiun_thread).unwrap() };
+    let focus_hwnd = unsafe { GetFocus() };
+    let focus_hwnd_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
 
-    (keyboard_hook, mouse_hook)
+    if menu_thread_id == focus_hwnd_thread_id {
+        create_local_hooks(menu_thread_id)
+    } else {
+        let dll = HMODULE(*HOOK_DLL as _);
+
+        let keyboard_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("keyboard_hook_proc\0".as_ptr())))
+        };
+        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
+
+        let mouse_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("mouse_hook_proc\0".as_ptr())))
+        };
+        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
+
+        (keyboard_hook, mouse_hook)
+    }
 }
 
-#[cfg(not(feature = "webview2"))]
-fn create_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
+fn create_local_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
     let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc), None, menu_thread_id).unwrap() };
     let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc), None, menu_thread_id).unwrap() };
     (keyboard_hook, mouse_hook)
@@ -443,7 +450,6 @@ fn set_capture(window_handle: isize) {
     let _ = unsafe { SetCursor(Some(cursor)) };
 }
 
-#[cfg(not(feature = "webview2"))]
 unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     /* Prevent keyboard input while Menu is open */
     if ncode >= 0 {
@@ -458,7 +464,6 @@ unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam:
     CallNextHookEx(None, ncode, wparam, lparam)
 }
 
-#[cfg(not(feature = "webview2"))]
 unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };

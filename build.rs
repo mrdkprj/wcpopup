@@ -3,7 +3,7 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
 
-    if cfg!(feature = "webview2") {
+    if cfg!(feature = "webview") {
         let dll_src = PathBuf::from(std::env::var("DEP_WCPOPUPHOOK_DLL").unwrap());
 
         let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());

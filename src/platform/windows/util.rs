@@ -27,7 +27,7 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
-#[cfg(feature = "webview2")]
+#[cfg(feature = "webview")]
 pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
     let dll_path = encode_wide(env!("WIN_HOOK_DLL"));
     LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
@@ -265,7 +265,7 @@ pub(crate) fn is_win11() -> bool {
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
-    #[cfg(feature = "webview2")]
+    #[cfg(feature = "webview")]
     let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
 }
 
