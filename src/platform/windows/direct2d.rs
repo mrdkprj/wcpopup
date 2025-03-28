@@ -1,11 +1,11 @@
 use super::{
-    get_current_theme, rgba_from_hex, to_hex_string, to_pcwstr, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme, DEFAULT_ICON_MARGIN,
+    get_current_theme, rgba_from_hex, to_hex_string, util::encode_wide, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme, DEFAULT_ICON_MARGIN,
     MIN_BUTTON_WIDTH,
 };
 use crate::{MenuIcon, MenuIconKind, MenuItemType};
 use std::{fs, path::PathBuf};
 use windows::{
-    core::{w, Error, Interface},
+    core::{w, Error, Interface, PCWSTR},
     Win32::{
         Foundation::{GENERIC_READ, RECT},
         Graphics::{
@@ -71,12 +71,14 @@ pub(crate) fn create_write_factory() -> IDWriteFactory {
 
 pub(crate) fn set_fill_color(element: &ID2D1SvgElement, color: u32) {
     let hex_string = to_hex_string(color);
-    unsafe { element.SetAttributeValue3(w!("fill"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, to_pcwstr(hex_string)).unwrap() };
+    let wide = encode_wide(hex_string);
+    unsafe { element.SetAttributeValue3(w!("fill"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, PCWSTR::from_raw(wide.as_ptr())).unwrap() };
 }
 
 pub(crate) fn set_stroke_color(element: &ID2D1SvgElement, color: u32) {
     let hex_string = to_hex_string(color);
-    unsafe { element.SetAttributeValue3(w!("stroke"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, to_pcwstr(hex_string)).unwrap() };
+    let wide = encode_wide(hex_string);
+    unsafe { element.SetAttributeValue3(w!("stroke"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, PCWSTR::from_raw(wide.as_ptr())).unwrap() };
 }
 
 fn font_point_to_pixel(font_point: f32) -> f32 {
@@ -231,7 +233,8 @@ fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> ID2D
     let _ = ComGuard::new();
 
     let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
-    let file_path = to_pcwstr(icon);
+    let wide = encode_wide(icon);
+    let file_path = PCWSTR::from_raw(wide.as_ptr());
     let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
     let frame = unsafe { decoder.GetFrame(0).unwrap() };
     let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
@@ -327,7 +330,8 @@ pub(crate) fn get_text_format(factory: &IDWriteFactory, theme: Theme, config: &C
         FontWeight::Bold => DWRITE_FONT_WEIGHT_BOLD,
     };
 
-    let format = unsafe { factory.CreateTextFormat(to_pcwstr(&config.font.font_family), None, font_weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, w!(""))? };
+    let font_family = encode_wide(&config.font.font_family);
+    let format = unsafe { factory.CreateTextFormat(PCWSTR::from_raw(font_family.as_ptr()), None, font_weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, w!(""))? };
 
     if alignment == TextAlignment::Leading {
         unsafe { format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)? };

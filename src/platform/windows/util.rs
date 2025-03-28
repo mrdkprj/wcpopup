@@ -27,6 +27,11 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
+#[cfg(feature = "webview")]
+pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
+    let dll_path = encode_wide(env!("WIN_HOOK_DLL"));
+    LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
+});
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -60,10 +65,6 @@ pub(crate) fn set_menu_data(window_handle: isize, data: &mut MenuData) {
 
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
-}
-
-pub(crate) fn to_pcwstr(string: impl AsRef<std::ffi::OsStr>) -> PCWSTR {
-    PCWSTR::from_raw(encode_wide(string).as_ptr())
 }
 
 #[allow(dead_code)]
@@ -264,6 +265,8 @@ pub(crate) fn is_win11() -> bool {
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
+    #[cfg(feature = "webview")]
+    let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
 }
 
 pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {

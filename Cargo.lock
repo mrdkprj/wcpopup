@@ -2288,17 +2288,26 @@ checksum = "c62a0a307cb4a311d3a07867860911ca130c3494e8c2719593806c08bc5d0484"
 
 [[package]]
 name = "wcpopup"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "async-std",
  "gtk",
  "once_cell",
  "serde",
  "tao",
+ "wcpopup_win_hook",
  "windows 0.60.0",
  "windows-numerics",
  "windows-version",
  "wry",
+]
+
+[[package]]
+name = "wcpopup_win_hook"
+version = "0.1.0"
+source = "git+https://github.com/mrdkprj/wcpopup_win_hook.git?rev=fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5#fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5"
+dependencies = [
+ "windows 0.60.0",
 ]
 
 [[package]]

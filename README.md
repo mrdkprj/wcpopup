@@ -73,7 +73,13 @@ async fn show_context_menu(x:i32, y:i32) {
 ## Platform-specific notes
 ### Windows
 WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)).    
-Using WebView2, you may need to enable the feature flag.
+You can disable it by either
+1. Enabling "webview" feature
+```
+features = ["webview"]
+```
+
+2. Enabling Webview2 "msWebView2BrowserHitTransparent" feature
 ```
 --enable-features=msWebView2BrowserHitTransparent
 ```

@@ -14,9 +14,15 @@ use std::mem::size_of;
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use util::*;
-use windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR;
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
+use windows::Win32::{
+    Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
+    UI::{
+        Input::KeyboardAndMouse::GetCapture,
+        WindowsAndMessaging::{CallNextHookEx, GetPropW},
+    },
+};
 use windows::{
     core::{w, Error, PCWSTR},
     Win32::{
@@ -35,18 +41,17 @@ use windows::{
         },
         UI::{
             Input::KeyboardAndMouse::{
-                GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
-                MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN,
+                ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK,
+                MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN,
             },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
-                AnimateWindow, CallNextHookEx, CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetClientRect, GetCursorPos, GetParent, GetPropW, GetWindow, GetWindowRect,
-                GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer,
-                SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER,
-                HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-                SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
-                WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_LAYERED,
-                WS_EX_TOOLWINDOW, WS_POPUP,
+                AnimateWindow, CreateWindowExW, DefWindowProcW, DestroyWindow, GetAncestor, GetClientRect, GetCursorPos, GetParent, GetWindow, GetWindowRect, GetWindowThreadProcessId, IsWindow,
+                IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer, SetWindowPos, SetWindowsHookExW, ShowWindow,
+                SystemParametersInfoW, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER, HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW,
+                SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_SHOWNOACTIVATE,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+                WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -324,11 +329,14 @@ impl Menu {
         let _ = unsafe { SetWindowPos(hwnd, Some(HWND_TOP), pt.x, pt.y, size.width, size.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE) };
 
         /* Set menu hwnd to property to be used in keyboard hook */
-        unsafe { SetPropW(hwnd, to_pcwstr(HOOK_PROP_NAME), Some(HANDLE(self.window_handle as _))).unwrap() };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
 
         /* Set hooks */
-        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook), None, menu_thread_id).unwrap() };
-        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook), None, menu_thread_id).unwrap() };
+        #[cfg(feature = "webview")]
+        let (keyboard_hook, mouse_hook) = create_hooks(menu_thread_id);
+        #[cfg(not(feature = "webview"))]
+        let (keyboard_hook, mouse_hook) = create_local_hooks(menu_thread_id);
 
         let info = PopupInfo {
             window_handle: self.window_handle,
@@ -371,6 +379,41 @@ impl Menu {
     }
 }
 
+#[cfg(feature = "webview")]
+fn create_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
+    use windows::{
+        core::PCSTR,
+        Win32::{Foundation::HMODULE, System::LibraryLoader::GetProcAddress, UI::Input::KeyboardAndMouse::GetFocus},
+    };
+
+    let focus_hwnd = unsafe { GetFocus() };
+    let focus_hwnd_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
+
+    if menu_thread_id == focus_hwnd_thread_id {
+        create_local_hooks(menu_thread_id)
+    } else {
+        let dll = HMODULE(*HOOK_DLL as _);
+
+        let keyboard_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("keyboard_hook_proc\0".as_ptr())))
+        };
+        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
+
+        let mouse_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
+            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("mouse_hook_proc\0".as_ptr())))
+        };
+        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
+
+        (keyboard_hook, mouse_hook)
+    }
+}
+
+fn create_local_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
+    let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc), None, menu_thread_id).unwrap() };
+    let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc), None, menu_thread_id).unwrap() };
+    (keyboard_hook, mouse_hook)
+}
+
 fn get_parent_hwnd(parent_window_handle: isize) -> HWND {
     let parent_hwnd = hwnd!(parent_window_handle);
     let ancestor = unsafe { GetAncestor(parent_hwnd, GA_ROOTOWNER) };
@@ -407,11 +450,12 @@ fn set_capture(window_handle: isize) {
     let _ = unsafe { SetCursor(Some(cursor)) };
 }
 
-unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     /* Prevent keyboard input while Menu is open */
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
-        let data = unsafe { GetPropW(capture_window, to_pcwstr(HOOK_PROP_NAME)) };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(prop_name.as_ptr())) };
 
         unsafe { PostMessageW(Some(HWND(data.0)), WM_KEYDOWN, wparam, lparam).unwrap() };
         return LRESULT(1);
@@ -420,10 +464,11 @@ unsafe extern "system" fn keyboard_hook(ncode: i32, wparam: WPARAM, lparam: LPAR
     CallNextHookEx(None, ncode, wparam, lparam)
 }
 
-unsafe extern "system" fn mouse_hook(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if ncode >= 0 {
         let capture_window = unsafe { GetCapture() };
-        let data = unsafe { GetPropW(capture_window, to_pcwstr(HOOK_PROP_NAME)) };
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(prop_name.as_ptr())) };
 
         match wparam.0 as u32 {
             /* Do not direct buttondown event since it is sent to default_window_proc */
@@ -453,7 +498,8 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
             if data.menu_type == MenuType::Main {
                 free_library();
-                let _ = unsafe { RemovePropW(window, to_pcwstr(HOOK_PROP_NAME)) };
+                let prop_name = encode_wide(HOOK_PROP_NAME);
+                let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
                 if let Ok(parent) = GetParent(window) {
                     let hwnd = get_parent_hwnd(parent.0 as _);
                     let _ = RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
@@ -752,7 +798,8 @@ fn finish_popup(info: &PopupInfo) {
 
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
 
-    let _ = unsafe { RemovePropW(hwnd, to_pcwstr(HOOK_PROP_NAME)) };
+    let prop_name = encode_wide(HOOK_PROP_NAME);
+    let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr())) };
 
     /* Unhook hooks */
     let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as _)) };
