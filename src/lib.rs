@@ -59,6 +59,22 @@
 //!     let selected_menu_item = menu.popup_at(x, y).await;
 //! }
 //! ```
+//!
+//! ## Platform-specific notes
+//! #### Windows
+//! WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)). You can disable it by either
+//! 1. Enabling "webview" feature
+//! ```
+//! features = ["webview"]
+//! ```
+//!
+//! 2. Enabling Webview2 "msWebView2BrowserHitTransparent" feature
+//! ```
+//! --enable-features=msWebView2BrowserHitTransparent
+//! ```
+//!
+//! #### Linux
+//! Gtk3 is required. MenuItem's text color is applied to SVG icon if the SVG file contains the "symbolic" term as the last component of the file name.
 pub mod config;
 mod platform;
 use std::path::{Path, PathBuf};

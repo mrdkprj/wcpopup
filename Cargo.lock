@@ -2305,7 +2305,7 @@ dependencies = [
 [[package]]
 name = "wcpopup_win_hook"
 version = "0.1.0"
-source = "git+https://github.com/mrdkprj/win_hook.git?rev=b5e426bf337f8adfd05b1f90aae85307834f56db#b5e426bf337f8adfd05b1f90aae85307834f56db"
+source = "git+https://github.com/mrdkprj/wcpopup_win_hook.git?rev=fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5#fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5"
 dependencies = [
  "windows 0.60.0",
 ]

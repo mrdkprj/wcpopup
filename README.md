@@ -75,7 +75,7 @@ async fn show_context_menu(x:i32, y:i32) {
 WebView2 may receive all keyboard input instead of its parent window([#1703](https://github.com/MicrosoftEdge/WebView2Feedback/issues/1703)).    
 You can disable it by either
 1. Enabling "webview" feature
-```rust
+```
 features = ["webview"]
 ```
 
