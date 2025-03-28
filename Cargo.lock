@@ -2305,7 +2305,8 @@ dependencies = [
 [[package]]
 name = "wcpopup_win_hook"
 version = "0.1.0"
-source = "git+https://github.com/mrdkprj/wcpopup_win_hook.git?rev=fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5#fc4daa2fc5e53d3fb3324b0a14fefdf5dfad79e5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb03b946975aa5bc3f8298d432db40e0e077a1cde7bc94432342810f03bf12de"
 dependencies = [
  "windows 0.60.0",
 ]
