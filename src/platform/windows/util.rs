@@ -28,8 +28,13 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 #[cfg(feature = "webview")]
+const DLL: &[u8] = include_bytes!(env!("WIN_HOOK_DLL"));
+#[cfg(feature = "webview")]
+static DLL_NAME: Lazy<std::path::PathBuf> = Lazy::new(|| std::env::temp_dir().join(format!("wcpopup_win_hook-{:?}.dll", uuid::Uuid::new_v4())));
+#[cfg(feature = "webview")]
 pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
-    let dll_path = encode_wide(env!("WIN_HOOK_DLL"));
+    std::fs::write(DLL_NAME.as_os_str(), DLL).unwrap();
+    let dll_path = encode_wide(DLL_NAME.as_os_str());
     LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
 });
 
@@ -46,6 +51,14 @@ macro_rules! vtoi {
     };
 }
 pub(crate) use vtoi;
+
+pub(crate) fn free_library() {
+    let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
+    #[cfg(feature = "webview")]
+    let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
+    #[cfg(feature = "webview")]
+    let _ = std::fs::remove_file(DLL_NAME.as_os_str());
+}
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
     let userdata = unsafe { GetWindowLongPtrW(hwnd!(window_handle), GWL_USERDATA) };
@@ -261,12 +274,6 @@ pub(crate) fn get_color_scheme(data: &MenuData) -> &ColorScheme {
 pub(crate) fn is_win11() -> bool {
     let version = windows_version::OsVersion::current();
     version.major == 10 && version.build >= 22000
-}
-
-pub(crate) fn free_library() {
-    let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
-    #[cfg(feature = "webview")]
-    let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
 }
 
 pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> Result<(), Error> {
