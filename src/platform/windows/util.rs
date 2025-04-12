@@ -30,7 +30,7 @@ static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dl
 #[cfg(feature = "webview")]
 const DLL: &[u8] = include_bytes!(env!("WIN_HOOK_DLL"));
 #[cfg(feature = "webview")]
-static DLL_NAME: Lazy<std::path::PathBuf> = Lazy::new(|| std::env::temp_dir().join(format!("wcpopup_win_hook-{:?}.dll", uuid::Uuid::new_v4())));
+static DLL_NAME: Lazy<std::path::PathBuf> = Lazy::new(|| std::env::temp_dir().join("wcpopup_win_hook.dll"));
 #[cfg(feature = "webview")]
 pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
     std::fs::write(DLL_NAME.as_os_str(), DLL).unwrap();

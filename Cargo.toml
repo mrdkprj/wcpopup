@@ -1,6 +1,6 @@
 [package]
 name = "wcpopup"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2021"
 description = "Context menu for Windows and Linux"
 documentation = "https://docs.rs/wcpopup/"
@@ -19,7 +19,7 @@ exclude = [
 [features]
 default = []
 "accelerator" = []
-"webview" = ["dep:wcpopup_win_hook", "dep:uuid"]
+"webview" = ["dep:wcpopup_win_hook"]
 
 [package.metadata.docs.rs]
 targets = [
@@ -67,11 +67,6 @@ version = "0.1.1"
 
 [target.'cfg(target_os = "windows")'.dependencies.wcpopup_win_hook]
 version = "0.1.0"
-optional = true
-
-[target.'cfg(target_os = "windows")'.dependencies.uuid]
-version = "1.11.0"
-features = ["v4"]
 optional = true
 
 [target.'cfg(target_os = "linux")'.dependencies.gtk]
