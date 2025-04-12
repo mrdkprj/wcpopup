@@ -484,8 +484,12 @@ pub(crate) fn create_gtk_menu_item(
 
     gtk_menu_item.connect_activate(move |selected_gtk_menu_item| {
         let menu_item = get_menu_item_data_mut(selected_gtk_menu_item);
+        let menu = get_menu_data(menu_item.gtk_menu_handle);
 
-        if should_send(selected_gtk_menu_item, menu_item) && selected_gtk_menu_item.get_sensitive() {
+        /*  Activate is triggered even when menu is hidden.
+           So check its visibility by data, not by gtk::Menu.is_visible which returns always false at this time
+        */
+        if menu.visible && selected_gtk_menu_item.get_sensitive() && should_send(selected_gtk_menu_item, menu_item) {
             MenuEvent::send(MenuEvent {
                 item: menu_item.clone(),
             });
