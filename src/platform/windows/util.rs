@@ -28,15 +28,7 @@ use windows::{
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 #[cfg(feature = "webview")]
-const DLL: &[u8] = include_bytes!(env!("WIN_HOOK_DLL"));
-#[cfg(feature = "webview")]
 static DLL_NAME: Lazy<std::path::PathBuf> = Lazy::new(|| std::env::temp_dir().join("wcpopup_win_hook.dll"));
-#[cfg(feature = "webview")]
-pub(crate) static HOOK_DLL: Lazy<isize> = Lazy::new(|| unsafe {
-    std::fs::write(DLL_NAME.as_os_str(), DLL).unwrap();
-    let dll_path = encode_wide(DLL_NAME.as_os_str());
-    LoadLibraryW(PCWSTR::from_raw(dll_path.as_ptr())).unwrap_or_default().0 as _
-});
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -55,9 +47,9 @@ pub(crate) use vtoi;
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
     #[cfg(feature = "webview")]
-    let _ = unsafe { FreeLibrary(HMODULE(*HOOK_DLL as _)) };
-    #[cfg(feature = "webview")]
-    let _ = std::fs::remove_file(DLL_NAME.as_os_str());
+    if std::path::Path::new(DLL_NAME.as_os_str()).exists() {
+        let _ = std::fs::remove_file(DLL_NAME.as_os_str());
+    }
 }
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {

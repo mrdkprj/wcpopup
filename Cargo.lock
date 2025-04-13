@@ -2295,20 +2295,10 @@ dependencies = [
  "once_cell",
  "serde",
  "tao",
- "wcpopup_win_hook",
  "windows 0.60.0",
  "windows-numerics",
  "windows-version",
  "wry",
-]
-
-[[package]]
-name = "wcpopup_win_hook"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb03b946975aa5bc3f8298d432db40e0e077a1cde7bc94432342810f03bf12de"
-dependencies = [
- "windows 0.60.0",
 ]
 
 [[package]]

@@ -19,7 +19,7 @@ use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
 use windows::Win32::{
     Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR,
     UI::{
-        Input::KeyboardAndMouse::GetCapture,
+        Input::KeyboardAndMouse::{EnableWindow, GetCapture, GetFocus, SetFocus},
         WindowsAndMessaging::{CallNextHookEx, GetPropW},
     },
 };
@@ -119,6 +119,7 @@ struct DisplayPoint {
 #[derive(Debug, Clone)]
 pub(crate) struct PopupInfo {
     window_handle: isize,
+    focus_window_handle: isize,
     thread_attached: bool,
     current_thread_id: u32,
     menu_thread_id: u32,
@@ -332,14 +333,20 @@ impl Menu {
         let prop_name = encode_wide(HOOK_PROP_NAME);
         unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
 
+        let focus_window_handle = if cfg!(feature = "webview") {
+            let focus_hwnd = unsafe { GetFocus() };
+            let _ = unsafe { EnableWindow(focus_hwnd, false) };
+            vtoi!(focus_hwnd.0)
+        } else {
+            0
+        };
+
         /* Set hooks */
-        #[cfg(feature = "webview")]
-        let (keyboard_hook, mouse_hook) = create_hooks(menu_thread_id);
-        #[cfg(not(feature = "webview"))]
         let (keyboard_hook, mouse_hook) = create_local_hooks(menu_thread_id);
 
         let info = PopupInfo {
             window_handle: self.window_handle,
+            focus_window_handle,
             thread_attached: attach_thread,
             menu_thread_id,
             current_thread_id,
@@ -376,35 +383,6 @@ impl Menu {
         }
 
         item
-    }
-}
-
-#[cfg(feature = "webview")]
-fn create_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
-    use windows::{
-        core::PCSTR,
-        Win32::{Foundation::HMODULE, System::LibraryLoader::GetProcAddress, UI::Input::KeyboardAndMouse::GetFocus},
-    };
-
-    let focus_hwnd = unsafe { GetFocus() };
-    let focus_hwnd_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
-
-    if menu_thread_id == focus_hwnd_thread_id {
-        create_local_hooks(menu_thread_id)
-    } else {
-        let dll = HMODULE(*HOOK_DLL as _);
-
-        let keyboard_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
-            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("keyboard_hook_proc\0".as_ptr())))
-        };
-        let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
-
-        let mouse_hook_proc_global: unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT = unsafe {
-            std::mem::transmute::<Option<unsafe extern "system" fn() -> isize>, unsafe extern "system" fn(i32, WPARAM, LPARAM) -> LRESULT>(GetProcAddress(dll, PCSTR("mouse_hook_proc\0".as_ptr())))
-        };
-        let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc_global), Some(dll.into()), focus_hwnd_thread_id).unwrap() };
-
-        (keyboard_hook, mouse_hook)
     }
 }
 
@@ -486,7 +464,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
     match msg {
         WM_INACTIVATE => {
             if IsWindowVisible(window).as_bool() {
-                init_menu_data(vtoi!(window.0));
+                init_menu_data(vtoi!(window.0), true);
                 post_message(None);
             }
 
@@ -540,7 +518,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN);
 
             if should_close_menu {
-                init_menu_data(vtoi!(window.0));
+                init_menu_data(vtoi!(window.0), true);
                 post_message(None);
                 return LRESULT(0);
             }
@@ -572,7 +550,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             if let Some((data, index)) = maybe_index {
                 if on_menu_item_selected(data, index) {
                     let menu_item = data.items[index].clone();
-                    init_menu_data(vtoi!(window.0));
+                    init_menu_data(vtoi!(window.0), true);
                     post_message(Some(&menu_item));
                 }
             }
@@ -596,7 +574,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_MOUSEWHEEL => {
-            init_menu_data(vtoi!(window.0));
+            init_menu_data(vtoi!(window.0), true);
             post_message(None);
             LRESULT(0)
         }
@@ -641,7 +619,7 @@ fn on_mouse_down(window: HWND, msg: u32) {
         let _ = unsafe { ReleaseCapture() };
 
         /* Close menu */
-        init_menu_data(vtoi!(window.0));
+        init_menu_data(vtoi!(window.0), false);
         post_message(None);
 
         /* If mouse input occurs on parent window, send mouse input */
@@ -666,7 +644,7 @@ fn on_mouse_up(window: HWND) {
     if on_menu_item_selected(data, index as usize) {
         set_menu_data(vtoi!(hwnd.0), data);
         let menu_item = data.items[index as usize].clone();
-        init_menu_data(vtoi!(window.0));
+        init_menu_data(vtoi!(window.0), true);
         post_message(Some(&menu_item));
     }
 }
@@ -792,7 +770,10 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
     }
 }
 
-fn finish_popup(info: &PopupInfo) {
+fn finish_popup(info: &PopupInfo, should_restore_focus: bool) {
+    #[cfg(feature = "webview")]
+    let _ = unsafe { EnableWindow(hwnd!(info.focus_window_handle), true) };
+
     let hwnd = hwnd!(info.window_handle);
     let _ = unsafe { ReleaseCapture() };
 
@@ -808,9 +789,13 @@ fn finish_popup(info: &PopupInfo) {
     if info.thread_attached {
         let _ = unsafe { AttachThreadInput(info.current_thread_id, info.menu_thread_id, false) };
     }
+
+    if cfg!(feature = "webview") && should_restore_focus {
+        let _ = unsafe { SetFocus(Some(hwnd!(info.focus_window_handle))) };
+    }
 }
 
-fn init_menu_data(window_handle: isize) {
+fn init_menu_data(window_handle: isize, should_restore_focus: bool) {
     let data = get_menu_data_mut(window_handle);
 
     data.selected_index = -1;
@@ -823,11 +808,11 @@ fn init_menu_data(window_handle: isize) {
 
     if data.menu_type == MenuType::Main {
         let info = data.popup_info.as_ref().unwrap();
-        finish_popup(info);
+        finish_popup(info, should_restore_focus);
     } else {
         let parent_data = get_menu_data(data.parent);
         let info = parent_data.popup_info.as_ref().unwrap();
-        finish_popup(info);
+        finish_popup(info, should_restore_focus);
     }
 
     set_menu_data(window_handle, data);
