@@ -166,7 +166,7 @@ impl Menu {
             MenuItemType::Submenu => self.create_submenu(item, config),
             MenuItemType::Radio => {
                 if let Some(radio) = self.items().iter().find(|existing_item| existing_item.name == item.name) {
-                    let mut radio_groups = radio_group_from_item(&radio);
+                    let mut radio_groups = radio_group_from_item(radio);
                     create_gtk_menu_item(self.gtk_menu_handle, item, None, Some(&mut radio_groups), config)
                 } else {
                     create_gtk_menu_item(self.gtk_menu_handle, item, None, None, config)

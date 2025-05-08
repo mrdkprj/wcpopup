@@ -16,7 +16,7 @@ use tao::{
 };
 use wcpopup::{
     config::{ColorScheme, Config, Corner, MenuSize, Theme, ThemeColor, DEFAULT_DARK_COLOR_SCHEME},
-    Menu, MenuBuilder, MenuEvent, MenuItem,
+    Menu, MenuBuilder, MenuEvent, MenuIcon, MenuItem,
 };
 #[cfg(target_os = "windows")]
 use wry::WebViewBuilderExtWindows;
@@ -116,13 +116,13 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(UserEvent::Append) => {
                 let mut menu = MENU_MAP.try_lock().unwrap();
-                let radio = MenuItem::new_radio_item("new_radio", "new_radio_label", "Theme", None, true, None, None);
+                let radio = MenuItem::new_radio_item("new_radio", "new_radio_label", "Theme", None, true, false, None);
                 let playback_speed = menu.get_menu_item_by_id("Theme").unwrap();
                 playback_speed.submenu.unwrap().insert(radio, 1);
 
-                let mut item = MenuItem::new_submenu_item("newsubmenu_id", "label", None, None);
-                item.add_menu_item(MenuItem::new_text_item("id1", "label1", Some("Alt+G"), None, None));
-                item.add_menu_item(MenuItem::new_text_item("id2", "label2", None, None, None));
+                let mut item = MenuItem::new_submenu_item("newsubmenu_id", "label", false, None);
+                item.add_menu_item(MenuItem::new_text_item("id1", "label1", Some("Alt+G"), false, None));
+                item.add_menu_item(MenuItem::new_text_item("id2", "label2", None, false, None));
                 menu.append(item);
             }
             Event::UserEvent(UserEvent::ChangeStateAndIcon) => {
@@ -202,10 +202,23 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
     #[cfg(target_os = "windows")]
     let builder = WebViewBuilder::new(&window);
     #[cfg(target_os = "linux")]
-    let builder = {
-        use wry::WebViewBuilderExtUnix;
+    let fixed = {
+        use gtk::prelude::*;
+        use tao::platform::unix::WindowExtUnix;
+        let fixed = gtk::Fixed::new();
         let vbox = window.default_vbox().unwrap();
-        WebViewBuilder::new_gtk(vbox)
+        vbox.pack_start(&fixed, true, true, 0);
+        fixed.show_all();
+        fixed
+    };
+    #[cfg(target_os = "linux")]
+    let build_webview = |builder: WebViewBuilder<'_>| -> wry::Result<wry::WebView> {
+        let webview = {
+            use wry::WebViewBuilderExtUnix;
+            builder.build_gtk(&fixed)?
+        };
+
+        Ok(webview)
     };
 
     let handler = move |req: Request<String>| {
@@ -296,7 +309,7 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
         }});
         window.addEventListener("mouseup", (e) => {{
             if (e.button === 2 && openContext) {{
-                window.ipc.postMessage(`context:${{e.screenX}}:${{e.screenY}}`)
+                window.ipc.postMessage(`context:${{e.clientX}}:${{e.clientY}}`)
                 openContext = false;
             }}
         }});
@@ -322,19 +335,24 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
     );
 
     #[cfg(target_os = "windows")]
-    let webview = builder
-        .with_html(html)
-        .with_ipc_handler(handler)
-        .with_devtools(true)
-        .with_transparent(false)
-        .with_focused(true)
-        .with_additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --enable-features=msWebView2BrowserHitTransparent")
-        .build()
-        .unwrap();
-
-    #[cfg(target_os = "linux")]
     let webview = builder.with_html(html).with_ipc_handler(handler).with_devtools(true).with_transparent(false).with_focused(true).build().unwrap();
 
+    #[cfg(target_os = "linux")]
+    let webview = {
+        let size = window.inner_size().to_logical::<u32>(window.scale_factor());
+        let builder = WebViewBuilder::new()
+            .with_bounds(wry::Rect {
+                position: tao::dpi::LogicalPosition::new(0, 0).into(),
+                size: tao::dpi::LogicalSize::new(size.width, size.height).into(),
+            })
+            .with_html(html)
+            .with_ipc_handler(handler)
+            .with_devtools(true)
+            .with_transparent(false)
+            .with_focused(true);
+
+        build_webview(builder).unwrap()
+    };
     // webview.open_devtools();
     (window, webview)
 }
@@ -369,23 +387,23 @@ pub fn add_menu(window_handle: isize) {
         },
     );
 
-    builder.text("PlaybackSpeed", "Playback Speed", None);
-    builder.text("SeekSpeed", "Seek Speed", None);
-    builder.check("fittowindow", "Fit To Window", true, None);
+    builder.text("PlaybackSpeed", "Playback Speed", false);
+    builder.text("SeekSpeed", "Seek Speed", false);
+    builder.check("fittowindow", "Fit To Window", true, false);
     builder.separator();
     #[cfg(target_os = "windows")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), r"\examples\img\icon_audio.png");
     #[cfg(target_os = "linux")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/img/icon_audio.png");
-    builder.text_with_icon("TogglePlaylistWindow", "Playlist", None, Some("Ctrl+P"), std::path::PathBuf::from(icon_path));
-    builder.text_with_accelerator("ToggleFullscreen", "Toggle Fullscreen", None, "F11");
-    builder.text("PictureInPicture", "Picture In Picture", Some(true));
+    builder.text_with_icon("TogglePlaylistWindow", "Playlist", false, MenuIcon::new(icon_path));
+    builder.text_with_accelerator("ToggleFullscreen", "Toggle Fullscreen", false, "F11");
+    builder.text("PictureInPicture", "Picture In Picture", true);
     builder.separator();
     #[cfg(target_os = "windows")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), r"\examples\img\camera.svg");
     #[cfg(target_os = "linux")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/img/camera-symbolic.svg");
-    builder.text_with_icon("Capture", "Capture", None, Some("Ctrl+S"), std::path::PathBuf::from(icon_path));
+    builder.text_with_accel_icon("Capture", "Capture", false, "Ctrl+S", MenuIcon::new(icon_path));
     builder.separator();
     create_theme_submenu(&mut builder);
     let menu = builder.build().unwrap();
@@ -395,15 +413,15 @@ pub fn add_menu(window_handle: isize) {
 
 fn create_theme_submenu(builder: &mut MenuBuilder) {
     let id = "Theme";
-    let mut parent = builder.submenu(id, "Theme", None);
+    let mut parent = builder.submenu(id, "Theme", false);
     let theme = if START_DARK {
         "Dark"
     } else {
         "Light "
     };
-    parent.radio_with_accelerator("dark", theme, id, theme == "Dark", None, "");
+    parent.radio("dark", theme, id, theme == "Dark", false);
     let theme = "Light";
-    parent.radio_with_accelerator("light", theme, id, theme == "Dark", None, "");
+    parent.radio("light", theme, id, theme == "Dark", false);
 
     parent.build().unwrap();
 }
