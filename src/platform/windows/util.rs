@@ -28,8 +28,6 @@ use windows::{
 };
 
 static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
-#[cfg(feature = "webview")]
-static DLL_NAME: Lazy<std::path::PathBuf> = Lazy::new(|| std::env::temp_dir().join("wcpopup_win_hook.dll"));
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -47,10 +45,6 @@ pub(crate) use vtoi;
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
-    #[cfg(feature = "webview")]
-    if std::path::Path::new(DLL_NAME.as_os_str()).exists() {
-        let _ = std::fs::remove_file(DLL_NAME.as_os_str());
-    }
 }
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
