@@ -1,5 +1,6 @@
 use super::{
-    accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_icon, Config, Container, IconSettings, Menu, MenuItem, MenuType, Theme,
+    accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_menu_item_icons, Config, Container, IconSettings, Menu, MenuItem,
+    MenuType, Theme,
 };
 use crate::{MenuIcon, MenuItemType};
 use gtk::{
@@ -304,6 +305,7 @@ impl MenuBuilder {
             gtk_menu.append(&gtk_menu_item);
         }
 
+        /* Add accel_group after gtk::MenuItem is created */
         let mut accel_group_handle = None;
         let mut accelerators = HashMap::new();
         if is_main_menu {
@@ -325,7 +327,7 @@ impl MenuBuilder {
 
         unsafe { gtk_menu.set_data("data", data) };
 
-        toggle_icon(self.menu.gtk_menu_handle);
+        toggle_menu_item_icons(self.menu.gtk_menu_handle);
 
         Ok(self.menu.clone())
     }

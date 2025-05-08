@@ -49,7 +49,7 @@ impl Menu {
         let gtk_menu = gtk::Menu::new();
 
         if let Some(menu_conainer_widget) = gtk_menu.parent() {
-            /* Make window borderless */
+            /* Set window border radius and background color */
             let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
             gtk_window.set_widget_name(widget_name);
             let provider = CssProvider::new();
@@ -165,7 +165,7 @@ impl Menu {
         match item.menu_item_type {
             MenuItemType::Submenu => self.create_submenu(item, config),
             MenuItemType::Radio => {
-                if let Some(radio) = self.find_first_radio(&item.name) {
+                if let Some(radio) = self.items().iter().find(|existing_item| existing_item.name == item.name) {
                     let mut radio_groups = radio_group_from_item(&radio);
                     create_gtk_menu_item(self.gtk_menu_handle, item, None, Some(&mut radio_groups), config)
                 } else {
@@ -182,10 +182,6 @@ impl Menu {
         let gtk_menu_item = create_gtk_menu_item(self.gtk_menu_handle, item, Some(&builder.gtk_submenu), None, config);
         item.submenu = Some(submenu);
         gtk_menu_item
-    }
-
-    fn find_first_radio(&self, name: &str) -> Option<MenuItem> {
-        self.items().iter().find(|item| item.name == *name).cloned()
     }
 
     /// Removes the MenuItem at the specified index.
@@ -213,7 +209,7 @@ impl Menu {
     }
 
     fn after_change_items(&self) {
-        toggle_icon(self.gtk_menu_handle);
+        toggle_menu_item_icons(self.gtk_menu_handle);
     }
 
     fn reset_haccel(&self, item: &MenuItem) {
@@ -227,8 +223,8 @@ impl Menu {
     }
 
     fn toggle_visible(&self) {
-        let menu_date = get_menu_data_mut(self.gtk_menu_handle);
-        menu_date.visible = !menu_date.visible;
+        let menu_data = get_menu_data_mut(self.gtk_menu_handle);
+        menu_data.visible = !menu_data.visible;
     }
 
     /// Shows Menu at the specified point.
@@ -409,7 +405,6 @@ fn on_theme_change(menu_type: MenuType, gtk_menu_handle: isize, maybe_preferred_
     gtk_menu.set_widget_name(widget_name);
 
     change_style(&gtk_menu.children(), new_theme, widget_name);
-    set_menu_data(gtk_menu_handle, data);
 }
 
 fn change_style(gtk_menu_items: &Vec<Widget>, new_theme: Theme, widget_name: &str) {
@@ -427,7 +422,6 @@ fn change_style(gtk_menu_items: &Vec<Widget>, new_theme: Theme, widget_name: &st
             }
             gtk_submenu.set_widget_name(widget_name);
             change_style(&gtk_submenu.children(), new_theme, widget_name);
-            set_menu_data(submenu_handle, submenu_data);
         }
     }
 }

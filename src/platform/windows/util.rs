@@ -3,6 +3,7 @@ use super::{
     direct2d::{get_icon_space, get_text_metrics},
     ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH,
 };
+use crate::config::{hex_from_rgb, rgba_from_hex};
 use once_cell::sync::Lazy;
 use std::{
     mem::{size_of, transmute},
@@ -21,7 +22,7 @@ use windows::{
             Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
             LibraryLoader::{GetProcAddress, LoadLibraryW},
         },
-        UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA},
+        UI::WindowsAndMessaging::{GetWindowLongPtrW, GWL_USERDATA},
     },
     UI::ViewManagement::{UIColorType, UISettings},
 };
@@ -64,10 +65,6 @@ pub(crate) fn get_menu_data_mut<'a>(window_handle: isize) -> &'a mut MenuData {
     unsafe { &mut *item_data_ptr }
 }
 
-pub(crate) fn set_menu_data(window_handle: isize, data: &mut MenuData) {
-    unsafe { SetWindowLongPtrW(hwnd!(window_handle), GWL_USERDATA, Box::into_raw(Box::new(data.clone())) as _) };
-}
-
 pub(crate) fn encode_wide(string: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
     string.as_ref().encode_wide().chain(std::iter::once(0)).collect()
 }
@@ -101,7 +98,7 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
     }
 }
 
-pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Result<Size, Error> {
+pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Size {
     let mut width = 0;
     let mut height = 0;
 
@@ -114,17 +111,18 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
         height += CORNER_RADIUS;
     }
 
-    let factory = create_write_factory();
+    let factory = create_write_factory().unwrap();
 
     /* Find the widest accelerator string */
     let mut widest_accel = (0.0, "");
     let mut cloned_items = Vec::new();
+
     items.clone_into(&mut cloned_items);
     let accels = cloned_items.iter().map(|i| i.accelerator.as_str());
     for accel in accels {
         if !accel.is_empty() {
             let mut raw_text = encode_wide(accel);
-            let metrics = get_text_metrics(&factory, theme, config, &mut raw_text)?;
+            let metrics = get_text_metrics(&factory, theme, config, &mut raw_text).unwrap();
             if metrics.width >= widest_accel.0 {
                 widest_accel = (metrics.width, accel);
             }
@@ -137,12 +135,16 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
 
         /* Don't measure invisible MenuItem */
         if !item.visible {
+            item.top = -1;
+            item.left = -1;
+            item.bottom = -1;
+            item.right = -1;
             continue;
         }
 
         item.top = height;
         item.left = config.size.border_size + config.size.horizontal_padding;
-        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space, widest_accel.1)?;
+        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space, widest_accel.1).unwrap();
         item.bottom = item.top + item_height;
 
         width = std::cmp::max(width, item_width);
@@ -153,12 +155,6 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
     for item in items {
         if item.visible {
             item.right = item.left + width;
-        } else {
-            /* Invalidate MenuItem */
-            item.top = -1;
-            item.left = -1;
-            item.bottom = -1;
-            item.right = -1;
         }
     }
 
@@ -174,15 +170,15 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
     width += config.size.border_size * 2;
     height += config.size.border_size;
 
-    Ok(Size {
+    Size {
         width,
         height,
-    })
+    }
 }
 
 pub(crate) fn recalculate(data: &mut MenuData) {
     data.icon_space = get_icon_space(&data.items, data.config.icon.as_ref().unwrap(), &data.check_svg, &data.submenu_svg);
-    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space).unwrap();
+    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space);
 }
 
 pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, menu_item: &MenuItem, theme: Theme, icon_space: IconSpace, widest_accel: &str) -> Result<(i32, i32), Error> {
@@ -272,7 +268,11 @@ pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> 
     if is_win11() {
         let hwnd = hwnd!(window_handle);
         if data.config.size.border_size > 0 {
-            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(get_color_scheme(data).border) as *const _ as *const _, size_of::<COLORREF>() as u32)? };
+            let color = get_color_scheme(data).border;
+            let rgb = rgba_from_hex(color);
+            /* COLORREF red is last byte */
+            let hex = hex_from_rgb(rgb.b, rgb.g, rgb.r);
+            unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &COLORREF(hex) as *const _ as *const _, size_of::<COLORREF>() as u32)? };
         } else {
             unsafe { DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &DWMWA_COLOR_NONE as *const _ as *const _, size_of::<COLORREF>() as u32)? };
         }

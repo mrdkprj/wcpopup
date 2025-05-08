@@ -191,6 +191,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
 
     format!(
         r#"
+            menuitem#{WIDGET_NAME} accelerator,
             menuitem#{DARK_WIDGET_NAME} accelerator,
             menuitem#{LIGHT_WIDGET_NAME} accelerator {{
                 font: {}px "{}";
@@ -203,6 +204,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
                 color: {};
             }}
 
+            menuitem#{WIDGET_NAME} check,
             menuitem#{DARK_WIDGET_NAME} check,
             menuitem#{LIGHT_WIDGET_NAME} check {{
                 border-width: 0px;

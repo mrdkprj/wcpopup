@@ -5,7 +5,8 @@ use super::{
     direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, create_svg_from_path, get_icon_space},
     hwnd, is_win11,
     menu_item::MenuItem,
-    set_window_border_color, Config, Corner, IconSettings, IconSpace, Menu, PopupInfo, Size, Theme,
+    util::set_window_border_color,
+    Config, Corner, IconSettings, IconSpace, Menu, PopupInfo, Size, Theme,
 };
 use crate::{MenuIcon, MenuItemType, MenuType};
 #[cfg(feature = "accelerator")]
@@ -13,7 +14,6 @@ use std::rc::Rc;
 use std::{
     collections::HashMap,
     mem::size_of,
-    os::raw::c_void,
     sync::atomic::{AtomicU32, Ordering},
 };
 #[cfg(feature = "accelerator")]
@@ -357,32 +357,35 @@ impl MenuBuilder {
             }
         }
 
-        let dc_render_target = create_render_target();
+        let dc_render_target = create_render_target()?;
 
         let check_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().check_svg {
-            create_svg_from_path(&dc_render_target, svg)
+            create_svg_from_path(&dc_render_target, svg)?
         } else {
-            create_check_svg(&dc_render_target, &self.config)
+            create_check_svg(&dc_render_target, &self.config)?
         };
 
         let submenu_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().arrow_svg {
-            create_svg_from_path(&dc_render_target, svg)
+            create_svg_from_path(&dc_render_target, svg)?
         } else {
-            create_submenu_svg(&dc_render_target, &self.config)
+            create_submenu_svg(&dc_render_target, &self.config)?
         };
 
         let icon_size = unsafe { check_svg_doc.GetViewportSize().width } as _;
+        /* Safe to unwrap icon which is Some(IconSettings::default()) by default */
         let icon_space = get_icon_space(&self.items, self.config.icon.as_ref().unwrap(), &check_svg_doc, &submenu_svg_doc);
-        let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
+        let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space);
 
         if is_main_menu {
+            /* Calculate items in all submenus */
             self.rebuild_submenu(icon_space);
         }
 
+        /* Save icon for reuse */
         let mut icon_map = HashMap::new();
         for item in &self.items {
             if let Some(icon) = &item.icon {
-                let bitmap = create_menu_image(&dc_render_target, icon, icon_size);
+                let bitmap = create_menu_image(&dc_render_target, icon, icon_size)?;
                 icon_map.insert(item.uuid, bitmap);
             }
         }
@@ -423,12 +426,13 @@ impl MenuBuilder {
         }
 
         let hwnd = hwnd!(self.menu.window_handle);
+
         if is_win11() {
             if self.config.corner == Corner::Round {
-                unsafe { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const c_void, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
+                unsafe { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const _, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
             }
 
-            set_window_border_color(self.menu.window_handle, &data)?;
+            set_window_border_color(self.menu.window_handle, &data).unwrap();
         }
 
         unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
@@ -439,10 +443,9 @@ impl MenuBuilder {
     fn rebuild_submenu(&mut self, icon_space: IconSpace) {
         for item in self.items.iter_mut() {
             if item.menu_item_type == MenuItemType::Submenu {
-                let mut submenu = item.submenu.as_ref().unwrap().clone();
+                let submenu = item.submenu.as_mut().unwrap();
                 submenu.menu_type = MenuType::Submenu;
                 let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, icon_space);
-                item.submenu = Some(submenu);
             }
         }
     }

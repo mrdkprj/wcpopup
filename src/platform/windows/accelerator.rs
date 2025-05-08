@@ -43,15 +43,15 @@ pub(crate) fn destroy_haccel(data: &MenuData) {
 pub(crate) fn create_haccel(accelerators: &HashMap<u16, String>) -> Option<HACCEL> {
     let mut accels = Vec::new();
 
-    for (cmd, acc) in accelerators {
-        let upper = acc.to_uppercase();
-        let upper_keys: Vec<&str> = upper.split('+').collect();
+    for (cmd, accel_key) in accelerators {
+        let upper_key = accel_key.to_uppercase();
+        let upper_keys: Vec<&str> = upper_key.split('+').collect();
 
         if MODIFIERS.contains(&upper_keys[upper_keys.len() - 1]) {
             continue;
         }
 
-        let keys: Vec<&str> = acc.split('+').collect();
+        let keys: Vec<&str> = accel_key.split('+').collect();
         let key = keys[keys.len() - 1];
 
         let virtual_key = get_virtual_key(key);

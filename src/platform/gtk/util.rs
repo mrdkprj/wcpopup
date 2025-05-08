@@ -19,21 +19,12 @@ pub(crate) fn get_menu_data_mut<'a>(gtk_menu_handle: isize) -> &'a mut MenuData 
     unsafe { menu.data::<MenuData>("data").unwrap().as_mut() }
 }
 
-pub(crate) fn set_menu_data(gtk_menu_handle: isize, data: &mut MenuData) {
-    let menu = to_gtk_menu(gtk_menu_handle);
-    unsafe { menu.set_data("data", data.clone()) };
-}
-
 pub(crate) fn get_menu_item_data<'a>(gtk_menu_item: &impl IsA<Widget>) -> &'a MenuItem {
     unsafe { gtk_menu_item.data::<MenuItem>("data").unwrap().as_mut() }
 }
 
 pub(crate) fn get_menu_item_data_mut<'a>(gtk_menu_item: &impl IsA<Widget>) -> &'a mut MenuItem {
     unsafe { gtk_menu_item.data::<MenuItem>("data").unwrap().as_mut() }
-}
-
-pub(crate) fn set_menu_item_data(gtk_menu_item: &impl IsA<Widget>, item: &mut MenuItem) {
-    unsafe { gtk_menu_item.set_data("data", item.clone()) };
 }
 
 pub(crate) fn to_gtk_window(gtk_window_handle: isize) -> gtk::Window {

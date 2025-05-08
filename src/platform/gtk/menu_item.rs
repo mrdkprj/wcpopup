@@ -1,5 +1,5 @@
 use super::{
-    collect_menu_items, from_gtk_menu_item, get_icon_menu_css, get_menu_data, get_menu_item_data_mut, set_menu_item_data,
+    collect_menu_items, from_gtk_menu_item, get_icon_menu_css, get_menu_data, get_menu_item_data_mut,
     style::{get_hidden_image_css, get_menu_item_css, get_rgba_icon_menu_css, get_widget_name},
     to_gtk_menu_item, Config, Menu, SubmenuData,
 };
@@ -8,7 +8,7 @@ use gtk::{
     ffi::{gtk_style_context_add_provider_for_screen, GtkStyleProvider},
     gdk::ffi::gdk_screen_get_default,
     gdk_pixbuf::{Colorspace, Pixbuf},
-    glib::{translate::ToGlibPtr, Cast, IsA},
+    glib::{translate::ToGlibPtr, Cast, IsA, ObjectExt},
     prelude::{AccelLabelExt, BoxExt, CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, StyleContextExt, WidgetExt},
     AccelLabel, CssProvider, Orientation, StyleProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
@@ -63,6 +63,8 @@ impl MenuItem {
 
     pub fn set_label(&mut self, label: &str) {
         self.label = label.to_string();
+
+        /* Exit if window is not created */
         if self.gtk_menu_item_handle == 0 {
             return;
         }
@@ -71,11 +73,12 @@ impl MenuItem {
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_label(label);
         menu_item.label = label.to_string();
-        set_menu_item_data(&gtk_menu_item, menu_item);
     }
 
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
+
+        /* Exit if window is not created */
         if self.gtk_menu_item_handle == 0 {
             return;
         }
@@ -84,11 +87,12 @@ impl MenuItem {
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_sensitive(!disabled);
         menu_item.disabled = disabled;
-        set_menu_item_data(&gtk_menu_item, menu_item);
     }
 
     pub fn set_visible(&mut self, visible: bool) {
         self.visible = visible;
+
+        /* Exit if window is not created */
         if self.gtk_menu_item_handle == 0 {
             return;
         }
@@ -97,7 +101,6 @@ impl MenuItem {
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_visible(visible);
         menu_item.visible = visible;
-        set_menu_item_data(&gtk_menu_item, menu_item);
     }
 
     pub fn set_icon(&mut self, icon: Option<MenuIcon>) {
@@ -106,6 +109,8 @@ impl MenuItem {
         }
 
         self.icon = icon;
+
+        /* Exit if window is not created */
         if self.gtk_menu_item_handle == 0 {
             return;
         }
@@ -120,9 +125,8 @@ impl MenuItem {
 
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.icon = self.icon.clone();
-        set_menu_item_data(&gtk_menu_item, menu_item);
 
-        toggle_icon(self.gtk_menu_handle);
+        toggle_menu_item_icons(self.gtk_menu_handle);
     }
 }
 
@@ -131,7 +135,7 @@ impl MenuItem {
         Self {
             id: id.to_string(),
             label: label.to_string(),
-            accelerator: accelerator.unwrap_or("").to_string(),
+            accelerator: accelerator.unwrap_or_default().to_string(),
             name: String::new(),
             menu_item_type: MenuItemType::Text,
             submenu: None,
@@ -153,7 +157,7 @@ impl MenuItem {
         Self {
             id: id.to_string(),
             label: label.to_string(),
-            accelerator: accelerator.unwrap_or("").to_string(),
+            accelerator: accelerator.unwrap_or_default().to_string(),
             name: String::new(),
             menu_item_type: MenuItemType::Checkbox,
             submenu: None,
@@ -173,7 +177,7 @@ impl MenuItem {
         Self {
             id: id.to_string(),
             label: label.to_string(),
-            accelerator: accelerator.unwrap_or("").to_string(),
+            accelerator: accelerator.unwrap_or_default().to_string(),
             name: name.to_string(),
             menu_item_type: MenuItemType::Radio,
             submenu: None,
@@ -191,6 +195,8 @@ impl MenuItem {
 
     pub fn set_checked(&mut self, checked: bool) {
         self.checked = checked;
+
+        /* Exit if window is not created */
         if self.gtk_menu_item_handle == 0 {
             return;
         }
@@ -199,7 +205,6 @@ impl MenuItem {
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.checked = checked;
         menu_item.suppress_event = true;
-        set_menu_item_data(&gtk_menu_item, menu_item);
 
         if self.menu_item_type == MenuItemType::Checkbox {
             gtk_menu_item.downcast_ref::<gtk::CheckMenuItem>().unwrap().set_active(checked);
@@ -334,7 +339,7 @@ pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::Rad
     HashMap::from([(item.name.clone(), gtk_radio_item)])
 }
 
-pub(crate) fn toggle_icon(gtk_menu_handle: isize) {
+pub(crate) fn toggle_menu_item_icons(gtk_menu_handle: isize) {
     let data = get_menu_data(gtk_menu_handle);
     let menu_items = collect_menu_items(gtk_menu_handle);
     let has_icon = menu_items.iter().any(|item| item.icon.is_some());
@@ -346,8 +351,8 @@ pub(crate) fn toggle_icon(gtk_menu_handle: isize) {
 
             /*
                 Use icon margin if
-                - Menu has any icon item and reserve_icon_size is true
-                - This item has icon
+                - menu has any icon item and reserve_icon_size is true
+                - this item has icon
             */
             if !has_icon {
                 image_item.hide();
@@ -486,8 +491,8 @@ pub(crate) fn create_gtk_menu_item(
         let menu_item = get_menu_item_data_mut(selected_gtk_menu_item);
         let menu = get_menu_data(menu_item.gtk_menu_handle);
 
-        /*  Activate is triggered even when menu is hidden.
-           So check its visibility by data, not by gtk::Menu.is_visible which returns always false at this time
+        /* Activate is triggered even when menu is hidden.
+           So check its visibility from data, not from gtk::Menu.is_visible which returns always false at this time
         */
         if menu.visible && selected_gtk_menu_item.get_sensitive() && should_send(selected_gtk_menu_item, menu_item) {
             MenuEvent::send(MenuEvent {
@@ -496,7 +501,6 @@ pub(crate) fn create_gtk_menu_item(
             MenuEvent::send_inner(InnerMenuEvent {
                 item: Some(menu_item.clone()),
             });
-            set_menu_item_data(selected_gtk_menu_item, menu_item);
         }
     });
 
@@ -511,7 +515,7 @@ pub(crate) fn create_gtk_menu_item(
     unsafe { gtk_style_context_add_provider_for_screen(gdk_screen_get_default(), provider_ptr, STYLE_PROVIDER_PRIORITY_APPLICATION) };
 
     item.gtk_menu_handle = gtk_menu_handle;
-    set_menu_item_data(&gtk_menu_item, item);
+    unsafe { gtk_menu_item.set_data("data", item.clone()) };
 
     gtk_menu_item.show();
 

@@ -1,7 +1,7 @@
 use super::{
     direct2d::create_menu_image,
     recalculate,
-    util::{get_menu_data_mut, set_menu_data, toggle_radio},
+    util::{get_menu_data_mut, toggle_radio},
     Menu,
 };
 use crate::{MenuIcon, MenuItemType};
@@ -71,29 +71,31 @@ impl MenuItem {
 
     pub fn set_label(&mut self, label: &str) {
         self.label = label.to_string();
+
+        /* Exit if window is not created */
         if self.menu_window_handle == 0 {
             return;
         }
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].label = label.to_string();
         recalculate(data);
-        set_menu_data(self.menu_window_handle, data);
     }
 
     pub fn set_disabled(&mut self, disabled: bool) {
         self.disabled = disabled;
 
+        /* Exit if window is not created */
         if self.menu_window_handle == 0 {
             return;
         }
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].disabled = disabled;
-        set_menu_data(self.menu_window_handle, data);
     }
 
     pub fn set_visible(&mut self, visible: bool) {
         self.visible = visible;
 
+        /* Exit if window is not created */
         if self.menu_window_handle == 0 {
             return;
         }
@@ -101,7 +103,6 @@ impl MenuItem {
         let data = get_menu_data_mut(self.menu_window_handle);
         data.items[self.index as usize].visible = visible;
         recalculate(data);
-        set_menu_data(self.menu_window_handle, data);
     }
 
     pub fn set_icon(&mut self, icon: Option<MenuIcon>) {
@@ -110,6 +111,8 @@ impl MenuItem {
         }
 
         self.icon = icon;
+
+        /* Exit if window is not created */
         if self.menu_window_handle == 0 {
             return;
         }
@@ -119,14 +122,13 @@ impl MenuItem {
         let _ = data.icon_map.remove(&self.uuid);
 
         if let Some(icon) = &self.icon {
-            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size);
+            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size).unwrap();
             data.icon_map.insert(self.uuid, bitmap);
         }
 
         data.items[self.index as usize].icon.clone_from(&self.icon);
 
         recalculate(data);
-        set_menu_data(self.menu_window_handle, data);
     }
 }
 
@@ -204,6 +206,8 @@ impl MenuItem {
 
     pub fn set_checked(&mut self, checked: bool) {
         self.checked = checked;
+
+        /* Exit if window is not created */
         if self.menu_window_handle == 0 {
             return;
         }
@@ -216,7 +220,6 @@ impl MenuItem {
         if data.items[index].menu_item_type == MenuItemType::Radio {
             toggle_radio(data, index);
         }
-        set_menu_data(self.menu_window_handle, data);
     }
 }
 
@@ -263,6 +266,7 @@ impl MenuItem {
 
 impl MenuItem {
     pub fn builder(menu_item_type: MenuItemType) -> MenuItemBuilder {
+        /* window handle is later set in append */
         MenuItemBuilder {
             menu_item: MenuItem::new(0, "", "", "", "", false, false, menu_item_type, None, None),
         }

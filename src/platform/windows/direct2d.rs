@@ -43,7 +43,7 @@ enum LeftButton {
     None,
 }
 
-pub(crate) fn create_render_target() -> ID2D1DCRenderTarget {
+pub(crate) fn create_render_target() -> Result<ID2D1DCRenderTarget, Error> {
     let factory: ID2D1Factory1 = unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).unwrap() };
 
     let prop = D2D1_RENDER_TARGET_PROPERTIES {
@@ -58,15 +58,15 @@ pub(crate) fn create_render_target() -> ID2D1DCRenderTarget {
         minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
     };
 
-    unsafe { factory.CreateDCRenderTarget(&prop).unwrap() }
+    unsafe { factory.CreateDCRenderTarget(&prop) }
 }
 
-pub(crate) fn get_device_context(target: &ID2D1DCRenderTarget) -> ID2D1DeviceContext5 {
-    target.cast().unwrap()
+pub(crate) fn get_device_context(target: &ID2D1DCRenderTarget) -> Result<ID2D1DeviceContext5, Error> {
+    target.cast()
 }
 
-pub(crate) fn create_write_factory() -> IDWriteFactory {
-    unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED).unwrap() }
+pub(crate) fn create_write_factory() -> Result<IDWriteFactory, Error> {
+    unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
 }
 
 pub(crate) fn set_fill_color(element: &ID2D1SvgElement, color: u32) {
@@ -85,8 +85,8 @@ fn font_point_to_pixel(font_point: f32) -> f32 {
     (1.3 * font_point).round()
 }
 
-pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> ID2D1SvgDocument {
-    let dc5 = get_device_context(target);
+pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<ID2D1SvgDocument, Error> {
+    let dc5 = get_device_context(target)?;
 
     let document = unsafe {
         dc5.CreateSvgDocument(
@@ -95,24 +95,21 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) ->
                 width: 1.0,
                 height: 1.0,
             },
-        )
-        .unwrap()
+        )?
     };
 
     let font_size = font_point_to_pixel(config.font.dark_font_size.max(config.font.light_font_size));
     let size = font_size.ceil();
     unsafe {
-        document
-            .SetViewportSize(D2D_SIZE_F {
-                width: size,
-                height: size,
-            })
-            .unwrap()
+        document.SetViewportSize(D2D_SIZE_F {
+            width: size,
+            height: size,
+        })?
     };
 
-    let root = unsafe { document.GetRoot().unwrap() };
-    unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8")).unwrap() };
-    unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16")).unwrap() };
+    let root = unsafe { document.GetRoot() }?;
+    unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8"))? };
+    unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16"))? };
 
     let segmentdata = [
         13.854, 3.646, 0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 0.708, -7.0, 7.0, 0.5, 0.5, 0.0, 0.0, 1.0, -0.708, 0.0, -3.5, -3.5, 0.5, 0.5, 0.0, 1.0, 1.0, 0.708, -0.708, 6.5, 10.293, 6.646, -6.647, 0.5, 0.5,
@@ -130,19 +127,19 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) ->
         D2D1_SVG_PATH_COMMAND_LINE_RELATIVE,
         D2D1_SVG_PATH_COMMAND_ARC_RELATIVE,
     ];
-    let path = unsafe { document.CreatePathData(Some(&segmentdata), Some(&commands)).unwrap() };
+    let path = unsafe { document.CreatePathData(Some(&segmentdata), Some(&commands))? };
 
-    let root = unsafe { document.GetRoot().unwrap() };
-    let element = unsafe { root.CreateChild(w!("path")).unwrap() };
-    unsafe { element.SetAttributeValue(w!("d"), &path).unwrap() };
+    let root = unsafe { document.GetRoot()? };
+    let element = unsafe { root.CreateChild(w!("path"))? };
+    unsafe { element.SetAttributeValue(w!("d"), &path)? };
 
-    unsafe { root.AppendChild(&element).unwrap() };
+    unsafe { root.AppendChild(&element)? };
 
-    document
+    Ok(document)
 }
 
-pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) -> ID2D1SvgDocument {
-    let dc5 = get_device_context(target);
+pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<ID2D1SvgDocument, Error> {
+    let dc5 = get_device_context(target)?;
 
     let document = unsafe {
         dc5.CreateSvgDocument(
@@ -151,24 +148,21 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
                 width: 1.0,
                 height: 1.0,
             },
-        )
-        .unwrap()
+        )?
     };
 
     let font_size = font_point_to_pixel(config.font.dark_font_size.max(config.font.light_font_size));
     let size = (font_size * 0.625).ceil();
     unsafe {
-        document
-            .SetViewportSize(D2D_SIZE_F {
-                width: size,
-                height: size,
-            })
-            .unwrap()
+        document.SetViewportSize(D2D_SIZE_F {
+            width: size,
+            height: size,
+        })?
     };
 
-    let root = unsafe { document.GetRoot().unwrap() };
-    unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8")).unwrap() };
-    unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16")).unwrap() };
+    let root = unsafe { document.GetRoot()? };
+    unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8"))? };
+    unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16"))? };
 
     let segmentdata = [
         4.646, 1.646, 0.5, 0.5, 0.0, 0.0, 1.0, 0.708, 0.0, 6.0, 6.0, 0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 0.708, -6.0, 6.0, 0.5, 0.5, 0.0, 0.0, 1.0, -0.708, -0.708, 10.293, 8.0, 4.646, 2.354, 0.5, 0.5, 0.0,
@@ -186,19 +180,19 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
         D2D1_SVG_PATH_COMMAND_LINE_ABSOLUTE,
         D2D1_SVG_PATH_COMMAND_ARC_RELATIVE,
     ];
-    let path = unsafe { document.CreatePathData(Some(&segmentdata), Some(&commands)).unwrap() };
+    let path = unsafe { document.CreatePathData(Some(&segmentdata), Some(&commands))? };
 
-    let root = unsafe { document.GetRoot().unwrap() };
-    let element = unsafe { root.CreateChild(w!("path")).unwrap() };
-    unsafe { element.SetAttributeValue3(w!("fill-rule"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("evenodd")).unwrap() };
-    unsafe { element.SetAttributeValue(w!("d"), &path).unwrap() };
-    unsafe { root.AppendChild(&element).unwrap() };
+    let root = unsafe { document.GetRoot()? };
+    let element = unsafe { root.CreateChild(w!("path"))? };
+    unsafe { element.SetAttributeValue3(w!("fill-rule"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("evenodd"))? };
+    unsafe { element.SetAttributeValue(w!("d"), &path)? };
+    unsafe { root.AppendChild(&element)? };
 
-    document
+    Ok(document)
 }
 
-pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, size: i32) -> MenuImageType {
-    match &menu_icon.icon {
+pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, size: i32) -> Result<MenuImageType, Error> {
+    let menu_image_type = match &menu_icon.icon {
         MenuIconKind::Path(icon) => {
             let mut is_svg = false;
             if let Some(extension) = icon.extension() {
@@ -213,33 +207,35 @@ pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIc
                         width: size,
                         height: size,
                     },
-                );
+                )?;
                 MenuImageType::Svg(svg_document)
             } else {
-                let bitmap = create_bitmap_from_path(target, icon);
+                let bitmap = create_bitmap_from_path(target, icon)?;
                 MenuImageType::Bitmap(bitmap)
             }
         }
         MenuIconKind::Rgba(icon) => {
-            let bitmap = create_bitmap_from_rgba(target, icon.rgba.clone(), icon.width, icon.height);
+            let bitmap = create_bitmap_from_rgba(target, icon.rgba.clone(), icon.width, icon.height)?;
             MenuImageType::Bitmap(bitmap)
         }
-    }
+    };
+
+    Ok(menu_image_type)
 }
 
-fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> ID2D1Bitmap1 {
-    let dc5 = get_device_context(target);
+fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> Result<ID2D1Bitmap1, Error> {
+    let dc5 = get_device_context(target)?;
 
     let _ = ComGuard::new();
 
-    let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).unwrap() };
+    let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
     let wide = encode_wide(icon);
     let file_path = PCWSTR::from_raw(wide.as_ptr());
-    let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand).unwrap() };
-    let frame = unsafe { decoder.GetFrame(0).unwrap() };
-    let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter().unwrap() };
+    let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)? };
+    let frame = unsafe { decoder.GetFrame(0)? };
+    let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter()? };
     unsafe {
-        format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom).unwrap();
+        format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)?;
     }
 
     unsafe {
@@ -253,14 +249,13 @@ fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> ID2D
                 ..Default::default()
             }),
         )
-        .unwrap()
     }
 }
 
-pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> ID2D1SvgDocument {
-    let dc5 = get_device_context(target);
+pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> Result<ID2D1SvgDocument, Error> {
+    let dc5 = get_device_context(target)?;
 
-    let svg_data = fs::read(&svg.path).unwrap();
+    let svg_data = fs::read(&svg.path)?;
 
     let _ = ComGuard::new();
 
@@ -273,7 +268,6 @@ pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) 
                     height: svg.height as f32,
                 },
             )
-            .unwrap()
         },
         None => unsafe {
             println!("Failed to load SVG file:{:?}", svg.path);
@@ -284,13 +278,12 @@ pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) 
                     height: 1.0,
                 },
             )
-            .unwrap()
         },
     }
 }
 
-pub(crate) fn create_bitmap_from_rgba(target: &ID2D1DCRenderTarget, rgba: Vec<u8>, width: u32, height: u32) -> ID2D1Bitmap1 {
-    let dc5 = get_device_context(target);
+pub(crate) fn create_bitmap_from_rgba(target: &ID2D1DCRenderTarget, rgba: Vec<u8>, width: u32, height: u32) -> Result<ID2D1Bitmap1, Error> {
+    let dc5 = get_device_context(target)?;
 
     unsafe {
         dc5.CreateBitmap(
@@ -308,7 +301,6 @@ pub(crate) fn create_bitmap_from_rgba(target: &ID2D1DCRenderTarget, rgba: Vec<u8
                 ..Default::default()
             },
         )
-        .unwrap()
     }
 }
 
