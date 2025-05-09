@@ -37,7 +37,7 @@ use windows::{
         UI::{
             Input::KeyboardAndMouse::{
                 GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
-                MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_RWIN,
+                MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
             },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
@@ -487,7 +487,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
                 free_library();
                 let prop_name = encode_wide(HOOK_PROP_NAME);
                 let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
-                /* "parent" in data is Menu's window handle. So use GetParent */
+                /* "parent" in data is the main Menu's window handle. So use GetParent */
                 if let Ok(parent) = GetParent(window) {
                     let hwnd = get_parent_hwnd(parent.0 as _);
                     let _ = RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
@@ -525,7 +525,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_KEYDOWN => {
-            let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN);
+            let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN | VK_MENU);
 
             if should_close_menu {
                 init_menu_data(vtoi!(window.0));
