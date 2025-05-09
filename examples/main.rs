@@ -18,8 +18,6 @@ use wcpopup::{
     config::{ColorScheme, Config, Corner, MenuSize, Theme, ThemeColor, DEFAULT_DARK_COLOR_SCHEME},
     Menu, MenuBuilder, MenuEvent, MenuIcon, MenuItem,
 };
-#[cfg(target_os = "windows")]
-use wry::WebViewBuilderExtWindows;
 use wry::{http::Request, WebView, WebViewBuilder};
 
 static MENU_MAP: Lazy<Mutex<Menu>> = Lazy::new(|| Mutex::new(Menu::default()));
@@ -200,7 +198,7 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
     add_menu(ptr);
 
     #[cfg(target_os = "windows")]
-    let builder = WebViewBuilder::new(&window);
+    let builder = WebViewBuilder::new();
     #[cfg(target_os = "linux")]
     let fixed = {
         use gtk::prelude::*;
@@ -335,7 +333,7 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
     );
 
     #[cfg(target_os = "windows")]
-    let webview = builder.with_html(html).with_ipc_handler(handler).with_devtools(true).with_transparent(false).with_focused(true).build().unwrap();
+    let webview = builder.with_html(html).with_ipc_handler(handler).with_devtools(true).with_transparent(false).with_focused(true).build(&window).unwrap();
 
     #[cfg(target_os = "linux")]
     let webview = {
@@ -360,7 +358,7 @@ fn create_new_window(title: String, event_loop: &EventLoopWindowTarget<UserEvent
 pub fn add_menu(window_handle: isize) {
     let size = MenuSize {
         horizontal_padding: 0,
-        border_size: 0,
+        item_horizontal_padding: 15,
         ..Default::default()
     };
 
