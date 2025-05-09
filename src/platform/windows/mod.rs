@@ -14,8 +14,6 @@ use std::mem::size_of;
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use util::*;
-#[cfg(feature = "webview")]
-use windows::Win32::UI::Input::KeyboardAndMouse::{EnableWindow, GetFocus};
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
 use windows::{
@@ -36,8 +34,8 @@ use windows::{
         },
         UI::{
             Input::KeyboardAndMouse::{
-                GetCapture, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_RIGHTDOWN,
-                MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
+                EnableWindow, GetCapture, GetFocus, ReleaseCapture, SendInput, SetActiveWindow, SetCapture, SetFocus, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+                MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_ESCAPE, VK_LWIN, VK_MENU, VK_RWIN,
             },
             Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
             WindowsAndMessaging::{
@@ -115,13 +113,10 @@ struct DisplayPoint {
 #[derive(Debug, Clone)]
 pub(crate) struct PopupInfo {
     window_handle: isize,
-    #[cfg(feature = "webview")]
-    parent_window_handle: isize,
+    focus_window_handle: isize,
     thread_attached: bool,
     current_thread_id: u32,
     menu_thread_id: u32,
-    #[cfg(feature = "webview")]
-    focus_thread_id: u32,
     keyboard_hook: isize,
     mouse_hook: isize,
 }
@@ -325,24 +320,23 @@ impl Menu {
         let prop_name = encode_wide(HOOK_PROP_NAME);
         unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
 
+        let focus_window_handle = if cfg!(feature = "webview") {
+            let focus_hwnd = unsafe { GetFocus() };
+            let _ = unsafe { EnableWindow(focus_hwnd, false) };
+            vtoi!(focus_hwnd.0)
+        } else {
+            0
+        };
+
         /* Set hooks */
         let (keyboard_hook, mouse_hook) = create_local_hooks(menu_thread_id);
 
-        /* After all is set, get focus window thread id. Otherwise, GetWindowThreadProcessId fails.*/
-        #[cfg(feature = "webview")]
-        let focus_hwnd = unsafe { GetFocus() };
-        #[cfg(feature = "webview")]
-        let focus_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
-
         let info = PopupInfo {
             window_handle: self.window_handle,
-            #[cfg(feature = "webview")]
-            parent_window_handle: self.parent_window_handle,
+            focus_window_handle,
             thread_attached: attach_thread,
             menu_thread_id,
             current_thread_id,
-            #[cfg(feature = "webview")]
-            focus_thread_id,
             keyboard_hook: vtoi!(keyboard_hook.0),
             mouse_hook: vtoi!(mouse_hook.0),
         };
@@ -356,8 +350,6 @@ impl Menu {
 
         animate_show_window(self.window_handle);
         set_capture(self.window_handle);
-        #[cfg(feature = "webview")]
-        detach_webview_thread(self.window_handle);
     }
 
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
@@ -366,8 +358,6 @@ impl Menu {
 
         animate_show_window(self.window_handle);
         set_capture(self.window_handle);
-        #[cfg(feature = "webview")]
-        detach_webview_thread(self.window_handle);
 
         let mut item = None;
 
@@ -393,22 +383,6 @@ fn get_parent_hwnd(parent_window_handle: isize) -> HWND {
     } else {
         ancestor
     }
-}
-
-#[cfg(feature = "webview")]
-fn detach_webview_thread(window_handle: isize) {
-    let data = get_menu_data(window_handle);
-    let info = data.popup_info.as_ref().unwrap();
-    /* Detach Webview2 thread so that keyboard hook works */
-    let _ = unsafe { AttachThreadInput(info.focus_thread_id, info.menu_thread_id, false) };
-    /* SetCapture no longer works by detaching. Instead disable parent window. */
-    let _ = unsafe { EnableWindow(hwnd!(info.parent_window_handle), false) };
-}
-
-#[cfg(feature = "webview")]
-fn attach_webview_thread(info: &PopupInfo) {
-    let _ = unsafe { EnableWindow(hwnd!(info.parent_window_handle), true) };
-    let _ = unsafe { AttachThreadInput(info.focus_thread_id, info.menu_thread_id, true) };
 }
 
 fn refresh_menu_icon(data: &mut MenuData, item: &MenuItem, should_remove: bool) {
@@ -473,7 +447,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
     match msg {
         WM_INACTIVATE => {
             if IsWindowVisible(window).as_bool() {
-                init_menu_data(vtoi!(window.0));
+                init_menu_data(vtoi!(window.0), true);
                 post_message(None);
             }
 
@@ -528,7 +502,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN | VK_MENU);
 
             if should_close_menu {
-                init_menu_data(vtoi!(window.0));
+                init_menu_data(vtoi!(window.0), true);
                 post_message(None);
                 return LRESULT(0);
             }
@@ -559,7 +533,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
             if let Some((data, index)) = maybe_index {
                 if on_menu_item_selected(data, index) {
-                    init_menu_data(vtoi!(window.0));
+                    init_menu_data(vtoi!(window.0), true);
                     let menu_item = &data.items[index];
                     post_message(Some(menu_item));
                 }
@@ -584,7 +558,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_MOUSEWHEEL => {
-            init_menu_data(vtoi!(window.0));
+            init_menu_data(vtoi!(window.0), true);
             post_message(None);
             LRESULT(0)
         }
@@ -629,7 +603,7 @@ fn on_mouse_down(window: HWND, msg: u32) {
         let _ = unsafe { ReleaseCapture() };
 
         /* Close menu */
-        init_menu_data(vtoi!(window.0));
+        init_menu_data(vtoi!(window.0), false);
         post_message(None);
 
         /* If mouse input occurs on parent window, send mouse input */
@@ -653,7 +627,7 @@ fn on_mouse_up(window: HWND) {
 
     if on_menu_item_selected(data, index as usize) {
         let menu_item = &data.items[index as usize];
-        init_menu_data(vtoi!(window.0));
+        init_menu_data(vtoi!(window.0), true);
         post_message(Some(menu_item));
     }
 }
@@ -779,9 +753,9 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
     }
 }
 
-fn finish_popup(info: &PopupInfo) {
+fn finish_popup(info: &PopupInfo, should_restore_focus: bool) {
     #[cfg(feature = "webview")]
-    attach_webview_thread(info);
+    let _ = unsafe { EnableWindow(hwnd!(info.focus_window_handle), true) };
 
     let hwnd = hwnd!(info.window_handle);
     let _ = unsafe { ReleaseCapture() };
@@ -798,9 +772,13 @@ fn finish_popup(info: &PopupInfo) {
     if info.thread_attached {
         let _ = unsafe { AttachThreadInput(info.current_thread_id, info.menu_thread_id, false) };
     }
+
+    if cfg!(feature = "webview") && should_restore_focus {
+        let _ = unsafe { SetFocus(Some(hwnd!(info.focus_window_handle))) };
+    }
 }
 
-fn init_menu_data(window_handle: isize) {
+fn init_menu_data(window_handle: isize, should_restore_focus: bool) {
     let data = get_menu_data_mut(window_handle);
 
     data.selected_index = -1;
@@ -813,11 +791,11 @@ fn init_menu_data(window_handle: isize) {
 
     if data.menu_type == MenuType::Main {
         let info = data.popup_info.as_ref().unwrap();
-        finish_popup(info);
+        finish_popup(info, should_restore_focus);
     } else {
         let parent_data = get_menu_data(data.parent);
         let info = parent_data.popup_info.as_ref().unwrap();
-        finish_popup(info);
+        finish_popup(info, should_restore_focus);
     }
 }
 
