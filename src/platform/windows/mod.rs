@@ -306,13 +306,9 @@ impl Menu {
 
         let hwnd = hwnd!(self.window_handle);
         let parent = hwnd!(self.parent_window_handle);
-        #[cfg(feature = "webview")]
-        let focus_hwnd = unsafe { GetFocus() };
 
         let menu_thread_id = unsafe { GetWindowThreadProcessId(hwnd, None) };
         let current_thread_id = unsafe { GetCurrentThreadId() };
-        #[cfg(feature = "webview")]
-        let focus_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
 
         if attach_thread {
             let _ = unsafe { AttachThreadInput(current_thread_id, menu_thread_id, true) };
@@ -331,6 +327,12 @@ impl Menu {
 
         /* Set hooks */
         let (keyboard_hook, mouse_hook) = create_local_hooks(menu_thread_id);
+
+        /* After all is set, get focus window thread id. Otherwise, GetWindowThreadProcessId fails.*/
+        #[cfg(feature = "webview")]
+        let focus_hwnd = unsafe { GetFocus() };
+        #[cfg(feature = "webview")]
+        let focus_thread_id = unsafe { GetWindowThreadProcessId(focus_hwnd, None) };
 
         let info = PopupInfo {
             window_handle: self.window_handle,
