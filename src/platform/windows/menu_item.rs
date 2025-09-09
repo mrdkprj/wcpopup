@@ -24,7 +24,7 @@ pub struct MenuItem {
     pub visible: bool,
     pub icon: Option<MenuIcon>,
     pub uuid: u16,
-    pub index: i32,
+    pub index: u32,
     pub(crate) menu_window_handle: isize,
     pub(crate) left: i32,
     pub(crate) top: i32,
@@ -243,6 +243,29 @@ impl MenuItem {
     pub fn new_separator() -> Self {
         Self {
             id: String::new(),
+            label: String::new(),
+            accelerator: String::new(),
+            name: String::new(),
+            menu_item_type: MenuItemType::Separator,
+            submenu: None,
+            menu_window_handle: 0,
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
+            index: 0,
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            checked: false,
+            disabled: false,
+            visible: true,
+            items: None,
+            icon: None,
+        }
+    }
+
+    pub fn new_separator_with_id(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
             label: String::new(),
             accelerator: String::new(),
             name: String::new(),

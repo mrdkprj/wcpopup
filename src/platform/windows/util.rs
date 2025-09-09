@@ -125,7 +125,7 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
 
     /* Calculate item top, left, bottom and menu size */
     for (index, item) in items.iter_mut().enumerate() {
-        item.index = index as i32;
+        item.index = index as u32;
 
         /* Don't measure invisible MenuItem */
         if !item.visible {

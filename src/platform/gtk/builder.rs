@@ -200,6 +200,12 @@ impl MenuBuilder {
         self
     }
 
+    pub fn separator_with_id(&mut self, id: &str) -> &Self {
+        let item = MenuItem::new_separator_with_id(id);
+        self.items.push(item);
+        self
+    }
+
     pub(crate) fn new_for_submenu(parent: &Menu, item: &MenuItem, config: &Config) -> Self {
         let (menu, gtk_menu) = Menu::new(Container::Menu(parent), config);
 

@@ -937,7 +937,7 @@ fn paint(dc: HDC, data: &MenuData, items: Vec<&MenuItem>) -> Result<(), Error> {
 
         let disabled = item.disabled;
         let checked = item.checked;
-        let selected = item.index == data.selected_index && !disabled;
+        let selected = item.index as i32 == data.selected_index && !disabled;
 
         fill_background(data, &whole_item_rect, scheme, selected)?;
 
@@ -1379,7 +1379,7 @@ fn get_cursor_point(_hwnd: HWND) -> POINT {
     pt
 }
 
-fn index_from_rect(data: &MenuData, rect: RECT) -> Option<i32> {
+fn index_from_rect(data: &MenuData, rect: RECT) -> Option<u32> {
     if rect.top == 0 && rect.bottom == data.size.height {
         return None;
     }
@@ -1406,7 +1406,7 @@ fn index_from_point(hwnd: HWND, screen_pt: POINT, data: &MenuData) -> i32 {
             }
 
             if pt.y >= item.top && pt.y <= item.bottom {
-                selected_index = item.index;
+                selected_index = item.index as i32;
                 break;
             }
         }

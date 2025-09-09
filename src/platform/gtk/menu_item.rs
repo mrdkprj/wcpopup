@@ -266,6 +266,26 @@ impl MenuItem {
             suppress_event: false,
         }
     }
+
+    pub fn new_separator_with_id(id: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            label: String::new(),
+            accelerator: String::new(),
+            name: String::new(),
+            menu_item_type: MenuItemType::Separator,
+            submenu: None,
+            uuid: UUID.fetch_add(1, Ordering::Relaxed),
+            gtk_menu_item_handle: 0,
+            gtk_menu_handle: 0,
+            checked: false,
+            disabled: false,
+            visible: true,
+            items: None,
+            icon: None,
+            suppress_event: false,
+        }
+    }
 }
 
 impl MenuItem {

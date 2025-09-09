@@ -260,6 +260,13 @@ impl MenuBuilder {
         self
     }
 
+    pub fn separator_with_id(&mut self, id: &str) -> &Self {
+        let mut item = MenuItem::new_separator_with_id(id);
+        item.menu_window_handle = self.menu.window_handle;
+        self.items.push(item);
+        self
+    }
+
     /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, id: &str, label: &str, disabled: bool) -> Self {
         let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, None);
