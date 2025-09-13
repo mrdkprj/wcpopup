@@ -2,7 +2,7 @@ use super::{
     get_current_theme, rgba_from_hex, to_hex_string, util::encode_wide, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme, DEFAULT_ICON_MARGIN,
     MIN_BUTTON_WIDTH,
 };
-use crate::{MenuIcon, MenuIconKind, MenuItemType};
+use crate::{MenuIcon, MenuIconKind, MenuItemType, SvgData};
 use std::{fs, path::PathBuf};
 use windows::{
     core::{w, Error, Interface, PCWSTR},
@@ -191,7 +191,7 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
     Ok(document)
 }
 
-pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, size: i32) -> Result<MenuImageType, Error> {
+pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, default_size: i32) -> Result<MenuImageType, Error> {
     let menu_image_type = match &menu_icon.icon {
         MenuIconKind::Path(icon) => {
             let mut is_svg = false;
@@ -204,8 +204,8 @@ pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIc
                     target,
                     &MenuSVG {
                         path: icon.clone(),
-                        width: size,
-                        height: size,
+                        width: default_size,
+                        height: default_size,
                     },
                 )?;
                 MenuImageType::Svg(svg_document)
@@ -217,6 +217,10 @@ pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIc
         MenuIconKind::Rgba(icon) => {
             let bitmap = create_bitmap_from_rgba(target, icon.rgba.clone(), icon.width, icon.height)?;
             MenuImageType::Bitmap(bitmap)
+        }
+        MenuIconKind::Svg(svg) => {
+            let svg_document = create_svg_from_data(target, svg)?;
+            MenuImageType::Svg(svg_document)
         }
     };
 
@@ -252,25 +256,32 @@ fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> Resu
     }
 }
 
-pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> Result<ID2D1SvgDocument, Error> {
-    let dc5 = get_device_context(target)?;
+pub(crate) fn create_svg_from_data(target: &ID2D1DCRenderTarget, svg: &SvgData) -> Result<ID2D1SvgDocument, Error> {
+    create_svg(target, svg.data.as_bytes(), svg.width, svg.height)
+}
 
+pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> Result<ID2D1SvgDocument, Error> {
     let svg_data = fs::read(&svg.path)?;
+    create_svg(target, &svg_data, svg.width as u32, svg.height as u32)
+}
+
+fn create_svg(target: &ID2D1DCRenderTarget, stream: &[u8], width: u32, height: u32) -> Result<ID2D1SvgDocument, Error> {
+    let dc5 = get_device_context(target)?;
 
     let _ = ComGuard::new();
 
-    match unsafe { SHCreateMemStream(Some(&svg_data)) } {
+    match unsafe { SHCreateMemStream(Some(stream)) } {
         Some(stream) => unsafe {
             dc5.CreateSvgDocument(
                 &stream,
                 D2D_SIZE_F {
-                    width: svg.width as f32,
-                    height: svg.height as f32,
+                    width: width as f32,
+                    height: height as f32,
                 },
             )
         },
         None => unsafe {
-            println!("Failed to load SVG file:{:?}", svg.path);
+            println!("Failed to load SVG file");
             dc5.CreateSvgDocument(
                 None,
                 D2D_SIZE_F {
@@ -373,9 +384,11 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
         return IconSpace::default();
     }
 
-    let has_checkbox = items.iter().any(|item| item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio);
-    let has_submenu = items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu);
-    let has_icon = items.iter().any(|item| item.icon.is_some());
+    /* Check if any menuitems with icon exist except invisible items */
+    let has_checkbox = items.iter().any(|item| (item.menu_item_type == MenuItemType::Checkbox || item.menu_item_type == MenuItemType::Radio) && item.visible);
+    let has_submenu = items.iter().any(|item| item.menu_item_type == MenuItemType::Submenu && item.visible);
+    let has_icon = items.iter().any(|item| item.icon.is_some() && item.visible);
+
     let left_button = if has_checkbox && has_icon {
         LeftButton::CheckAndIcon
     } else if has_checkbox {
@@ -388,6 +401,25 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
 
     let check_svg_size = unsafe { check_svg.GetViewportSize().width } as i32;
     let submenu_svg_size = unsafe { submenu_svg.GetViewportSize().width } as i32;
+    let max_icon_size = if has_icon {
+        items
+            .iter()
+            .map(|item| {
+                if let Some(menu_icon) = &item.icon {
+                    match &menu_icon.icon {
+                        MenuIconKind::Path(_) => 0,
+                        MenuIconKind::Rgba(rgba) => rgba.width,
+                        MenuIconKind::Svg(svg) => svg.width,
+                    }
+                } else {
+                    0
+                }
+            })
+            .max()
+            .unwrap_or(0)
+    } else {
+        0
+    };
 
     let default_margin = MIN_BUTTON_WIDTH + DEFAULT_ICON_MARGIN;
 
@@ -404,7 +436,7 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
     let mid = match left_button {
         /* When horizontal_margin is set, use it for left and right margin */
         LeftButton::CheckAndIcon | LeftButton::Icon => IconSize {
-            width: check_svg_size,
+            width: check_svg_size.max(max_icon_size as _),
             lmargin: icon_settings.horizontal_margin.unwrap_or(0),
             rmargin: icon_settings.horizontal_margin.unwrap_or(default_margin),
         },

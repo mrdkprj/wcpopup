@@ -3,11 +3,11 @@ use super::{
     style::{get_hidden_image_css, get_menu_item_css, get_rgba_icon_menu_css, get_widget_name},
     to_gtk_menu_item, Config, Menu, SubmenuData,
 };
-use crate::{InnerMenuEvent, MenuEvent, MenuIcon, MenuIconKind, MenuItemType};
+use crate::{platform::platform_impl::style::get_svg_icon_menu_css, InnerMenuEvent, MenuEvent, MenuIcon, MenuIconKind, MenuItemType};
 use gtk::{
     ffi::{gtk_style_context_add_provider_for_screen, GtkStyleProvider},
     gdk::ffi::gdk_screen_get_default,
-    gdk_pixbuf::{Colorspace, Pixbuf},
+    gdk_pixbuf::{traits::PixbufLoaderExt, Colorspace, InterpType, Pixbuf, PixbufLoader},
     glib::{translate::ToGlibPtr, Cast, IsA, ObjectExt},
     prelude::{AccelLabelExt, BoxExt, CheckMenuItemExt, ContainerExt, CssProviderExt, GtkMenuItemExt, RadioMenuItemExt, StyleContextExt, WidgetExt},
     AccelLabel, CssProvider, Orientation, StyleProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
@@ -101,6 +101,8 @@ impl MenuItem {
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         gtk_menu_item.set_visible(visible);
         menu_item.visible = visible;
+
+        toggle_menu_item_icons(self.gtk_menu_handle);
     }
 
     pub fn set_icon(&mut self, icon: Option<MenuIcon>) {
@@ -362,7 +364,7 @@ pub(crate) fn radio_group_from_item(item: &MenuItem) -> HashMap<String, gtk::Rad
 pub(crate) fn toggle_menu_item_icons(gtk_menu_handle: isize) {
     let data = get_menu_data(gtk_menu_handle);
     let menu_items = collect_menu_items(gtk_menu_handle);
-    let has_icon = menu_items.iter().any(|item| item.icon.is_some());
+    let has_icon = menu_items.iter().any(|item| item.icon.is_some() && item.visible);
 
     for menu_item in menu_items {
         if menu_item.menu_item_type != MenuItemType::Separator {
@@ -410,6 +412,32 @@ fn create_icon_label(label: &str, menu_icon: &Option<MenuIcon>, config: &Config,
                 apply_image_css(&image, menu_icon, config);
                 image
             }
+            MenuIconKind::Svg(svg) => {
+                let loader = PixbufLoader::new();
+                let result = loader.write_bytes(&gtk::glib::Bytes::from(svg.data.as_bytes()));
+                let svg_image = match result {
+                    Ok(_) => {
+                        let _ = loader.close();
+                        if let Some(pixbuf) = loader.pixbuf() {
+                            let scaled = pixbuf.scale_simple(svg.width as _, svg.height as _, InterpType::Nearest).unwrap_or(pixbuf);
+                            Some(gtk::Image::from_pixbuf(Some(&scaled)))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(_) => None,
+                };
+                let image = if let Some(svg_image) = svg_image {
+                    apply_image_css(&svg_image, menu_icon, config);
+                    svg_image
+                } else {
+                    let image = gtk::Image::new();
+                    apply_empty_image_css(&image, config);
+                    image
+                };
+
+                image
+            }
         }
     } else {
         let image = gtk::Image::new();
@@ -429,6 +457,7 @@ fn apply_image_css(image: &impl IsA<Widget>, menu_icon: &MenuIcon, config: &Conf
     let css = match &menu_icon.icon {
         MenuIconKind::Path(icon) => get_icon_menu_css(icon, config),
         MenuIconKind::Rgba(icon) => get_rgba_icon_menu_css(icon, config),
+        MenuIconKind::Svg(icon) => get_svg_icon_menu_css(icon, config),
     };
     css_provider.load_from_data(css.as_bytes()).unwrap();
     image.style_context().add_provider(&css_provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);

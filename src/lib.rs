@@ -116,9 +116,17 @@ pub(crate) struct RgbaIcon {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SvgData {
+    data: String,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum MenuIconKind {
     Path(PathBuf),
     Rgba(RgbaIcon),
+    Svg(SvgData),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +145,16 @@ impl MenuIcon {
         Self {
             icon: MenuIconKind::Rgba(RgbaIcon {
                 rgba,
+                width,
+                height,
+            }),
+        }
+    }
+
+    pub fn from_svg(svg: String, width: u32, height: u32) -> Self {
+        Self {
+            icon: MenuIconKind::Svg(SvgData {
+                data: svg,
                 width,
                 height,
             }),
