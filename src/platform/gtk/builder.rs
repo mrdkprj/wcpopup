@@ -16,6 +16,7 @@ pub(crate) struct MenuData {
     pub(crate) config: Config,
     pub(crate) accel_group_handle: Option<isize>,
     pub(crate) visible: bool,
+    pub(crate) parent_gtk_menu_handle: isize,
 }
 
 #[derive(Debug, Clone)]
@@ -329,6 +330,7 @@ impl MenuBuilder {
             config: self.config.clone(),
             accel_group_handle,
             visible: false,
+            parent_gtk_menu_handle: self.menu.parent_gtk_menu_handle,
         };
 
         unsafe { gtk_menu.set_data("data", data) };
