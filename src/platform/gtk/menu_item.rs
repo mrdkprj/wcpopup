@@ -427,16 +427,14 @@ fn create_icon_label(label: &str, menu_icon: &Option<MenuIcon>, config: &Config,
                     }
                     Err(_) => None,
                 };
-                let image = if let Some(svg_image) = svg_image {
+                if let Some(svg_image) = svg_image {
                     apply_image_css(&svg_image, menu_icon, config);
                     svg_image
                 } else {
                     let image = gtk::Image::new();
                     apply_empty_image_css(&image, config);
                     image
-                };
-
-                image
+                }
             }
         }
     } else {
@@ -538,12 +536,18 @@ pub(crate) fn create_gtk_menu_item(
 
     gtk_menu_item.connect_activate(move |selected_gtk_menu_item| {
         let menu_item = get_menu_item_data_mut(selected_gtk_menu_item);
-        let menu = get_menu_data(menu_item.gtk_menu_handle);
+        let current_menu_data = get_menu_data(menu_item.gtk_menu_handle);
+        /* Get menu data, not submenu data */
+        let menu_data = if current_menu_data.parent_gtk_menu_handle > 0 {
+            get_menu_data(current_menu_data.parent_gtk_menu_handle)
+        } else {
+            current_menu_data
+        };
 
-        /* Activate is triggered even when menu is hidden.
+        /* Activate is triggered even when menu is hidden and the receiver receives the event as soon as it is shown.
            So check its visibility from data, not from gtk::Menu.is_visible which returns always false at this time
         */
-        if menu.visible && selected_gtk_menu_item.get_sensitive() && should_send(selected_gtk_menu_item, menu_item) {
+        if menu_data.visible && selected_gtk_menu_item.get_sensitive() && should_send(selected_gtk_menu_item, menu_item) {
             MenuEvent::send(MenuEvent {
                 item: menu_item.clone(),
             });
