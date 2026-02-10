@@ -77,14 +77,16 @@
 //! Gtk3 is required. MenuItem's text color is applied to SVG icon if the SVG file contains the "symbolic" term as the last component of the file name.
 pub mod config;
 mod platform;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{LazyLock, OnceLock},
+};
 
-use async_std::channel::{unbounded, Receiver, Sender};
 #[cfg(target_os = "linux")]
 use config::Corner;
-use once_cell::sync::{Lazy, OnceCell};
 pub use platform::platform_impl::{Menu, MenuBuilder, MenuItem};
 use serde::{Deserialize, Serialize};
+use smol::channel::{unbounded, Receiver, Sender};
 
 #[derive(Debug, PartialEq, Eq)]
 enum ThemeChangeFactor {
@@ -176,9 +178,9 @@ pub type MenuEventReceiver = Receiver<MenuEvent>;
 type MenuEventHandler = std::boxed::Box<dyn Fn(MenuEvent) + Send + Sync + 'static>;
 type InnerMenuEventReceiver = Receiver<InnerMenuEvent>;
 
-static MENU_CHANNEL: Lazy<(Sender<MenuEvent>, MenuEventReceiver)> = Lazy::new(unbounded);
-static INNER_MENU_CHANNEL: Lazy<(Sender<InnerMenuEvent>, InnerMenuEventReceiver)> = Lazy::new(unbounded);
-static MENU_EVENT_HANDLER: OnceCell<Option<MenuEventHandler>> = OnceCell::new();
+static MENU_CHANNEL: LazyLock<(Sender<MenuEvent>, MenuEventReceiver)> = LazyLock::new(unbounded);
+static INNER_MENU_CHANNEL: LazyLock<(Sender<InnerMenuEvent>, InnerMenuEventReceiver)> = LazyLock::new(unbounded);
+static MENU_EVENT_HANDLER: OnceLock<Option<MenuEventHandler>> = OnceLock::new();
 
 impl MenuEvent {
     pub fn item(&self) -> &MenuItem {

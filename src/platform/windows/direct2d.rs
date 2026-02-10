@@ -230,7 +230,7 @@ pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIc
 fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> Result<ID2D1Bitmap1, Error> {
     let dc5 = get_device_context(target)?;
 
-    let _ = ComGuard::new();
+    let _guard = ComGuard::new();
 
     let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
     let wide = encode_wide(icon);
@@ -268,7 +268,7 @@ pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) 
 fn create_svg(target: &ID2D1DCRenderTarget, stream: &[u8], width: u32, height: u32) -> Result<ID2D1SvgDocument, Error> {
     let dc5 = get_device_context(target)?;
 
-    let _ = ComGuard::new();
+    let _guard = ComGuard::new();
 
     match unsafe { SHCreateMemStream(Some(stream)) } {
         Some(stream) => unsafe {

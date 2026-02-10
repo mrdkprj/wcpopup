@@ -1,4 +1,3 @@
-use async_std::future::timeout;
 use gtk::{
     gdk::{self, ffi::GdkEvent, Gravity, Rectangle},
     glib::{monotonic_time, translate::ToGlibPtr, Cast, ObjectExt},
@@ -222,11 +221,6 @@ impl Menu {
         add_accelerators_from_menu_item(gtk_menu_handle, item);
     }
 
-    fn toggle_visible(&self) {
-        let menu_data = get_menu_data_mut(self.gtk_menu_handle);
-        menu_data.visible = !menu_data.visible;
-    }
-
     /// Shows Menu at the specified point.
     pub fn popup_at(&self, x: i32, y: i32) {
         let gtk_window = to_gtk_window(self.gtk_window_handle);
@@ -247,64 +241,80 @@ impl Menu {
 
         #[cfg(feature = "accelerator")]
         connect_accelerator(&gtk_menu, self.gtk_menu_handle, self.gtk_window_handle);
-        self.toggle_visible();
+        toggle_visible(self.gtk_menu_handle);
         gtk_menu.popup_at_rect(&window, &Rectangle::new(x, y, 0, 0), Gravity::NorthWest, Gravity::NorthWest, Some(&event));
-        self.toggle_visible();
+        toggle_visible(self.gtk_menu_handle);
     }
 
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
     pub async fn popup_at_async(&self, x: i32, y: i32) -> Option<MenuItem> {
-        let gtk_window = to_gtk_window(self.gtk_window_handle);
-        let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
+        let (tx, rx) = smol::channel::bounded(1);
+        let (gtk_window_handle, gtk_menu_handle) = (self.gtk_window_handle, self.gtk_menu_handle);
 
-        let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
-        event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
+        gtk::glib::MainContext::default().invoke(move || {
+            gtk::glib::spawn_future_local(async move {
+                let gtk_window = to_gtk_window(gtk_window_handle);
+                let gtk_menu = to_gtk_menu(gtk_menu_handle);
 
-        let window = gtk_window.window().unwrap();
+                let mut event = gdk::Event::new(gdk::EventType::ButtonPress);
+                event.set_device(gtk_window.display().default_seat().and_then(|d| d.pointer()).as_ref());
 
-        let event_ffi: *mut GdkEvent = event.to_glib_none().0;
-        if !event_ffi.is_null() {
-            let time = monotonic_time() / 1000;
-            unsafe {
-                (*event_ffi).button.time = time as _;
-            }
-        }
+                let window = gtk_window.window().unwrap();
 
-        #[cfg(feature = "accelerator")]
-        connect_accelerator(&gtk_menu, self.gtk_menu_handle, self.gtk_window_handle);
+                let event_ffi: *mut GdkEvent = event.to_glib_none().0;
+                if !event_ffi.is_null() {
+                    let time = monotonic_time() / 1000;
+                    unsafe {
+                        (*event_ffi).button.time = time as _;
+                    }
+                }
 
-        self.toggle_visible();
+                #[cfg(feature = "accelerator")]
+                connect_accelerator(&gtk_menu, gtk_menu_handle, gtk_window_handle);
 
-        gtk_menu.popup_at_rect(&window, &Rectangle::new(x, y, 0, 0), Gravity::NorthWest, Gravity::NorthWest, Some(&event));
+                toggle_visible(gtk_menu_handle);
 
-        let mut item = None;
+                gtk_menu.popup_at_rect(&window, &Rectangle::new(x, y, 0, 0), Gravity::NorthWest, Gravity::NorthWest, Some(&event));
 
-        let signal = gtk_menu.connect_hide(move |_| {
-            MenuEvent::send_inner(InnerMenuEvent {
-                item: None,
+                let mut item = None;
+
+                let signal = gtk_menu.connect_hide(move |_| {
+                    MenuEvent::send_inner(InnerMenuEvent {
+                        item: None,
+                    });
+                });
+
+                if let Ok(event) = MenuEvent::innner_receiver().recv().await {
+                    item = event.item;
+                }
+
+                gtk_menu.disconnect(signal);
+
+                toggle_visible(gtk_menu_handle);
+
+                /*
+                    Wait 50 ms for "activate" event.
+                    "activate" by click occurs after automatic menu "hide", so event can have menu item.
+                    "activate" by keypress occurs before menu "hide", so event is none that should be dismissed.
+                */
+                smol::Timer::after(Duration::from_millis(50)).await;
+                if let Ok(event) = MenuEvent::innner_receiver().try_recv() {
+                    if event.item.is_some() {
+                        item = event.item;
+                    }
+                }
+
+                let _ = tx.try_send(item);
             });
         });
 
-        if let Ok(event) = MenuEvent::innner_receiver().recv().await {
-            item = event.item;
-        }
-
-        gtk_menu.disconnect(signal);
-
-        self.toggle_visible();
-        /*
-            Wait 50 ms for "activate" event.
-            "activate" by click occurs after automatic menu "hide", so event can have menu item.
-            "activate" by keypress occurs before menu "hide", so event is none that should be dismissed.
-        */
-        if let Ok(Ok(event)) = timeout(Duration::from_millis(50), MenuEvent::innner_receiver().recv()).await {
-            if event.item.is_some() {
-                item = event.item;
-            }
-        }
-
-        item
+        rx.recv().await.unwrap_or_default()
     }
+}
+
+fn toggle_visible(gtk_menu_handle: isize) {
+    let menu_data = get_menu_data_mut(gtk_menu_handle);
+    menu_data.visible = !menu_data.visible;
 }
 
 pub(crate) fn collect_menu_items(gtk_menu_handle: isize) -> Vec<MenuItem> {

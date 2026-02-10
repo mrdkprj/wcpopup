@@ -72,22 +72,8 @@ fn main() -> wry::Result<()> {
                 }
             }
             Event::UserEvent(UserEvent::Popup(x, y)) => {
-                #[cfg(target_os = "windows")]
                 if ASYNC {
                     async_std::task::spawn(async move {
-                        let menu = MENU_MAP.lock().await;
-                        let result = menu.popup_at_async(x, y).await;
-                        if let Some(item) = result {
-                            println!("Async MenuEvent:{:?}", item.label);
-                        }
-                    });
-                } else {
-                    let menu = MENU_MAP.try_lock().unwrap();
-                    menu.popup_at(x, y);
-                }
-                #[cfg(target_os = "linux")]
-                if ASYNC {
-                    gtk::glib::spawn_future_local(async move {
                         let menu = MENU_MAP.lock().await;
                         let result = menu.popup_at_async(x, y).await;
                         if let Some(item) = result {

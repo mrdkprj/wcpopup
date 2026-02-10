@@ -1,6 +1,6 @@
 [package]
 name = "wcpopup"
-version = "0.7.3"
+version = "0.8.0"
 edition = "2021"
 description = "Context menu for Windows and Linux"
 documentation = "https://docs.rs/wcpopup/"
@@ -33,8 +33,7 @@ path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-once_cell = "1.19.0"
-async-std = "1.13.0"
+smol = "2.0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-version]
 version = "0.1.1"

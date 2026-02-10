@@ -4,10 +4,10 @@ use super::{
     ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH,
 };
 use crate::config::{hex_from_rgb, rgba_from_hex};
-use once_cell::sync::Lazy;
 use std::{
     mem::{size_of, transmute},
     os::windows::ffi::OsStrExt,
+    sync::LazyLock,
 };
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
@@ -27,7 +27,7 @@ use windows::{
     UI::ViewManagement::{UIColorType, UISettings},
 };
 
-static HUXTHEME: Lazy<isize> = Lazy::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
+static HUXTHEME: LazyLock<isize> = LazyLock::new(|| unsafe { LoadLibraryW(w!("uxtheme.dll")).unwrap_or_default().0 as _ });
 
 macro_rules! hwnd {
     ($expression:expr) => {
@@ -278,7 +278,7 @@ pub(crate) fn set_window_border_color(window_handle: isize, data: &MenuData) -> 
 pub(crate) fn should_apps_use_dark_mode() -> bool {
     const UXTHEME_SHOULDAPPSUSEDARKMODE_ORDINAL: u16 = 132;
     type ShouldAppsUseDarkMode = unsafe extern "system" fn() -> bool;
-    static SHOULD_APPS_USE_DARK_MODE: Lazy<Option<ShouldAppsUseDarkMode>> = Lazy::new(|| unsafe {
+    static SHOULD_APPS_USE_DARK_MODE: LazyLock<Option<ShouldAppsUseDarkMode>> = LazyLock::new(|| unsafe {
         if HMODULE(*HUXTHEME as _).is_invalid() {
             return None;
         }
