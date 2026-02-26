@@ -43,9 +43,9 @@ use windows::{
                 GetWindowThreadProcessId, IsWindow, IsWindowVisible, KillTimer, LoadCursorW, PostMessageW, RegisterClassExW, RemovePropW, SetCursor, SetForegroundWindow, SetPropW, SetTimer,
                 SetWindowPos, SetWindowsHookExW, ShowWindow, SystemParametersInfoW, UnhookWindowsHookEx, WindowFromPoint, AW_BLEND, CS_DROPSHADOW, CS_HREDRAW, CS_VREDRAW, GA_ROOTOWNER, GW_OWNER,
                 HCURSOR, HHOOK, HICON, HWND_TOP, IDC_ARROW, SPI_GETMENUSHOWDELAY, SWP_ASYNCWINDOWPOS, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER,
-                SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
-                WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS, WS_EX_LAYERED,
-                WS_EX_TOOLWINDOW, WS_POPUP,
+                SW_HIDE, SW_SHOWNOACTIVATE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TIMERPROC, WH_KEYBOARD, WH_MOUSE, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_PAINT, WM_PRINTCLIENT, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_THEMECHANGED, WNDCLASSEXW, WS_CLIPSIBLINGS,
+                WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_POPUP,
             },
         },
     },
@@ -443,6 +443,34 @@ unsafe extern "system" fn mouse_hook_proc(ncode: i32, wparam: WPARAM, lparam: LP
     CallNextHookEx(None, ncode, wparam, lparam)
 }
 
+fn cleanup(window: HWND) {
+    if !is_userdata_avive(window) {
+        return;
+    }
+
+    let data = get_menu_data_mut(vtoi!(window.0));
+
+    if data.menu_type == MenuType::Main {
+        free_library();
+        let prop_name = encode_wide(HOOK_PROP_NAME);
+        let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
+        /* "parent" in data is the main Menu's window handle. So use GetParent */
+        if let Ok(parent) = unsafe { GetParent(window) } {
+            let hwnd = get_parent_hwnd(parent.0 as _);
+            let _ = unsafe { RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize) };
+        }
+    }
+
+    #[cfg(feature = "accelerator")]
+    if data.menu_type == MenuType::Main {
+        destroy_haccel(data);
+    }
+
+    let _ = unsafe { Box::from_raw(data) };
+
+    clear_userdata(window)
+}
+
 unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_INACTIVATE => {
@@ -454,27 +482,8 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             LRESULT(0)
         }
 
-        WM_DESTROY => {
-            let data = get_menu_data_mut(vtoi!(window.0));
-
-            if data.menu_type == MenuType::Main {
-                free_library();
-                let prop_name = encode_wide(HOOK_PROP_NAME);
-                let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
-                /* "parent" in data is the main Menu's window handle. So use GetParent */
-                if let Ok(parent) = GetParent(window) {
-                    let hwnd = get_parent_hwnd(parent.0 as _);
-                    let _ = RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize);
-                }
-            }
-
-            #[cfg(feature = "accelerator")]
-            if data.menu_type == MenuType::Main {
-                destroy_haccel(data);
-            }
-
-            let _ = Box::from_raw(data);
-
+        WM_CLOSE | WM_DESTROY => {
+            cleanup(window);
             DefWindowProcW(window, msg, wparam, lparam)
         }
 

@@ -12,7 +12,7 @@ use std::{
 use windows::{
     core::{w, Error, PCSTR, PCWSTR},
     Win32::{
-        Foundation::{FreeLibrary, COLORREF, HMODULE},
+        Foundation::{FreeLibrary, COLORREF, HMODULE, HWND},
         Globalization::lstrlenW,
         Graphics::{
             DirectWrite::IDWriteFactory,
@@ -22,7 +22,7 @@ use windows::{
             Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED},
             LibraryLoader::{GetProcAddress, LoadLibraryW},
         },
-        UI::WindowsAndMessaging::{GetWindowLongPtrW, GWL_USERDATA},
+        UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_USERDATA},
     },
     UI::ViewManagement::{UIColorType, UISettings},
 };
@@ -45,6 +45,15 @@ pub(crate) use vtoi;
 
 pub(crate) fn free_library() {
     let _ = unsafe { FreeLibrary(HMODULE(*HUXTHEME as _)) };
+}
+
+pub(crate) fn clear_userdata(hwnd: HWND) {
+    unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, 0) };
+}
+
+pub(crate) fn is_userdata_avive(hwnd: HWND) -> bool {
+    let userdata = unsafe { GetWindowLongPtrW(hwnd, GWL_USERDATA) };
+    userdata == 0
 }
 
 pub(crate) fn get_menu_data<'a>(window_handle: isize) -> &'a MenuData {
