@@ -1,4 +1,8 @@
-use super::{FontWeight, MenuData, MenuItem};
+use super::{MenuData, MenuItem};
+use crate::{
+    config::{Config, FontWeight},
+    MenuIconKind, MenuItemType,
+};
 use gtk::{
     ffi::{GtkAccelGroup, GtkMenu, GtkMenuItem, GtkWindow},
     glib::{
@@ -8,6 +12,7 @@ use gtk::{
     prelude::GtkSettingsExt,
     AccelGroup, Widget,
 };
+use std::path::Path;
 
 pub(crate) fn get_menu_data<'a>(gtk_menu_handle: isize) -> &'a MenuData {
     let menu = to_gtk_menu(gtk_menu_handle);
@@ -84,4 +89,28 @@ pub(crate) fn is_sys_dark() -> bool {
         }
     }
     false
+}
+
+pub(crate) fn get_custom_check_width(config: &Config) -> Option<u32> {
+    if let Some(check) = &config.icon.as_ref().unwrap().check {
+        match &check.icon {
+            MenuIconKind::Path(_) => None,
+            MenuIconKind::Data(data) => Some(data.width),
+            MenuIconKind::Svg(svg) => Some(svg.width),
+        }
+    } else {
+        None
+    }
+}
+
+pub(crate) fn is_svg(file_path: &Path) -> bool {
+    if let Some(extension) = file_path.extension() {
+        extension.eq("svg") || extension.eq("SVG")
+    } else {
+        false
+    }
+}
+
+pub(crate) fn is_check_menu_item(menu_item_type: MenuItemType) -> bool {
+    menu_item_type == MenuItemType::Checkbox || menu_item_type == MenuItemType::Radio
 }

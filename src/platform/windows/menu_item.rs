@@ -1,5 +1,5 @@
 use super::{
-    direct2d::create_menu_image,
+    image::create_menu_image,
     recalculate,
     util::{get_menu_data_mut, toggle_radio},
     Menu,
@@ -121,9 +121,11 @@ impl MenuItem {
 
         let _ = data.icon_map.remove(&self.uuid);
 
+        /* If icon is None, remove only */
         if let Some(icon) = &self.icon {
-            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size).unwrap();
-            data.icon_map.insert(self.uuid, bitmap);
+            if let Ok(bitmap) = create_menu_image(&data.dc_render_target, icon) {
+                data.icon_map.insert(self.uuid, bitmap);
+            }
         }
 
         data.items[self.index as usize].icon.clone_from(&self.icon);

@@ -1,7 +1,7 @@
 #[cfg(feature = "accelerator")]
 use super::to_gtk_window;
-use super::{get_menu_data, to_accel_group, to_gtk_menu_item, MenuItem};
-use crate::MenuItemType;
+use super::{get_menu_data, to_accel_group, to_gtk_menu_item};
+use crate::{MenuItem, MenuItemType};
 #[cfg(feature = "accelerator")]
 use gtk::{
     accelerator_name,

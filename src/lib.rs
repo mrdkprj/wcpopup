@@ -101,7 +101,7 @@ pub enum MenuType {
     Submenu,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Copy)]
 pub enum MenuItemType {
     Text,
     Checkbox,
@@ -111,14 +111,21 @@ pub enum MenuItemType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub(crate) struct RgbaIcon {
-    rgba: Vec<u8>,
+pub(crate) struct PathIcon {
+    path: PathBuf,
+    width: u32,
+    height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub(crate) struct DataIcon {
+    data: Vec<u8>,
     width: u32,
     height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct SvgData {
+pub(crate) struct SvgIcon {
     data: String,
     width: u32,
     height: u32,
@@ -126,9 +133,9 @@ pub(crate) struct SvgData {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum MenuIconKind {
-    Path(PathBuf),
-    Rgba(RgbaIcon),
-    Svg(SvgData),
+    Path(PathIcon),
+    Data(DataIcon),
+    Svg(SvgIcon),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,25 +144,32 @@ pub struct MenuIcon {
 }
 
 impl MenuIcon {
-    pub fn new<P: AsRef<Path>>(path: P) -> Self {
+    /// Creates from path.
+    pub fn new<P: AsRef<Path>>(path: P, width: u32, height: u32) -> Self {
         Self {
-            icon: MenuIconKind::Path(path.as_ref().to_path_buf()),
-        }
-    }
-
-    pub fn from_rgba(rgba: Vec<u8>, width: u32, height: u32) -> Self {
-        Self {
-            icon: MenuIconKind::Rgba(RgbaIcon {
-                rgba,
+            icon: MenuIconKind::Path(PathIcon {
+                path: path.as_ref().to_path_buf(),
                 width,
                 height,
             }),
         }
     }
 
+    /// Creates from data. Data must be RGB/RGBA.
+    pub fn from_data(data: Vec<u8>, width: u32, height: u32) -> Self {
+        Self {
+            icon: MenuIconKind::Data(DataIcon {
+                data,
+                width,
+                height,
+            }),
+        }
+    }
+
+    /// Creates from SVG data.
     pub fn from_svg(svg: String, width: u32, height: u32) -> Self {
         Self {
-            icon: MenuIconKind::Svg(SvgData {
+            icon: MenuIconKind::Svg(SvgIcon {
                 data: svg,
                 width,
                 height,

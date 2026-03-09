@@ -1,6 +1,5 @@
-use async_std::sync::Mutex;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use smol::lock::Mutex;
+use std::{collections::HashMap, sync::LazyLock};
 #[cfg(target_os = "windows")]
 use tao::{
     event::{Event, WindowEvent},
@@ -20,8 +19,8 @@ use wcpopup::{
 };
 use wry::{http::Request, WebView, WebViewBuilder};
 
-static MENU_MAP: Lazy<Mutex<Menu>> = Lazy::new(|| Mutex::new(Menu::default()));
-static DARK_MODE: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(true));
+static MENU_MAP: LazyLock<Mutex<Menu>> = LazyLock::new(|| Mutex::new(Menu::default()));
+static DARK_MODE: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(true));
 
 enum UserEvent {
     CloseWindow(WindowId),
@@ -73,13 +72,14 @@ fn main() -> wry::Result<()> {
             }
             Event::UserEvent(UserEvent::Popup(x, y)) => {
                 if ASYNC {
-                    async_std::task::spawn(async move {
-                        let menu = MENU_MAP.lock().await;
+                    smol::spawn(async move {
+                        let menu = MENU_MAP.try_lock().unwrap();
                         let result = menu.popup_at_async(x, y).await;
                         if let Some(item) = result {
                             println!("Async MenuEvent:{:?}", item.label);
                         }
-                    });
+                    })
+                    .detach();
                 } else {
                     let menu = MENU_MAP.try_lock().unwrap();
                     menu.popup_at(x, y);
@@ -379,7 +379,7 @@ pub fn add_menu(window_handle: isize) {
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), r"\examples\img\icon_audio.png");
     #[cfg(target_os = "linux")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/img/icon_audio.png");
-    builder.text_with_icon("TogglePlaylistWindow", "Playlist", false, MenuIcon::new(icon_path));
+    builder.text_with_icon("TogglePlaylistWindow", "Playlist", false, MenuIcon::new(icon_path, 16, 16));
     builder.text_with_accelerator("ToggleFullscreen", "Toggle Fullscreen", false, "F11");
     builder.text("PictureInPicture", "Picture In Picture", true);
     builder.separator();
@@ -387,7 +387,7 @@ pub fn add_menu(window_handle: isize) {
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), r"\examples\img\camera.svg");
     #[cfg(target_os = "linux")]
     let icon_path = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/img/camera-symbolic.svg");
-    builder.text_with_accel_icon("Capture", "Capture", false, "Ctrl+S", MenuIcon::new(icon_path));
+    builder.text_with_accel_icon("Capture", "Capture", false, "Ctrl+S", MenuIcon::new(icon_path, 16, 16));
     builder.separator();
     create_theme_submenu(&mut builder);
     let menu = builder.build().unwrap();

@@ -1,14 +1,17 @@
 #[cfg(feature = "accelerator")]
 use super::{accelerator::create_haccel, get_menu_data};
 use super::{
-    calculate,
-    direct2d::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, create_svg_from_path, get_icon_space},
-    hwnd, is_win11,
+    calculate, hwnd,
+    image::{create_check_svg, create_menu_image, create_render_target, create_submenu_svg, get_icon_space, MenuImageType},
+    is_win11,
     menu_item::MenuItem,
     util::set_window_border_color,
-    Config, Corner, IconSettings, IconSpace, Menu, PopupInfo, Size, Theme,
+    IconSpace, Menu, PopupInfo, Size,
 };
-use crate::{MenuIcon, MenuItemType, MenuType};
+use crate::{
+    config::{Config, Corner, IconSettings, Theme},
+    MenuIcon, MenuItemType, MenuType,
+};
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
 use std::{
@@ -23,7 +26,7 @@ use windows::{
     Win32::{
         Foundation::HWND,
         Graphics::{
-            Direct2D::{ID2D1Bitmap1, ID2D1DCRenderTarget, ID2D1SvgDocument},
+            Direct2D::ID2D1DCRenderTarget,
             Dwm::{DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND, DWM_WINDOW_CORNER_PREFERENCE},
         },
         UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_USERDATA},
@@ -32,18 +35,12 @@ use windows::{
 
 static COUNTER: AtomicU32 = AtomicU32::new(400);
 
-#[derive(Debug, Clone)]
-pub(crate) enum MenuImageType {
-    Bitmap(ID2D1Bitmap1),
-    Svg(ID2D1SvgDocument),
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct MenuData {
     pub(crate) popup_info: Option<PopupInfo>,
     pub(crate) menu_type: MenuType,
     pub(crate) items: Vec<MenuItem>,
-    pub(crate) win_subclass_id: Option<u32>,
+    pub(crate) win_subclass_id: u32,
     pub(crate) selected_index: i32,
     pub(crate) size: Size,
     pub(crate) icon_space: IconSpace,
@@ -52,14 +49,13 @@ pub(crate) struct MenuData {
     pub(crate) config: Config,
     pub(crate) parent: isize,
     pub(crate) dc_render_target: ID2D1DCRenderTarget,
-    pub(crate) check_svg: ID2D1SvgDocument,
-    pub(crate) submenu_svg: ID2D1SvgDocument,
+    pub(crate) check_icon: MenuImageType,
+    pub(crate) submenu_icon: MenuImageType,
     pub(crate) icon_map: HashMap<u16, MenuImageType>,
     #[cfg(feature = "accelerator")]
     pub(crate) haccel: Option<Rc<HACCEL>>,
     #[cfg(feature = "accelerator")]
     pub(crate) accelerators: HashMap<u16, String>,
-    pub(crate) icon_size: i32,
 }
 
 /// Builder to create Menu.
@@ -74,16 +70,16 @@ pub struct MenuBuilder {
 impl MenuBuilder {
     /// Creates a new Menu for the specified window handle.
     pub fn new(window_handle: isize) -> Self {
-        Self::new_builder(window_handle)
+        Self::new_builder(window_handle, MenuType::Main)
     }
 
     /// Creates a new Menu for the specified HWND.
     pub fn new_for_hwnd(hwnd: HWND) -> Self {
         let window_handle = hwnd.0 as isize;
-        Self::new_builder(window_handle)
+        Self::new_builder(window_handle, MenuType::Main)
     }
 
-    fn new_builder(window_handle: isize) -> Self {
+    fn new_builder(window_handle: isize, menu_type: MenuType) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -94,22 +90,22 @@ impl MenuBuilder {
             items: Vec::new(),
             config,
             theme,
-            menu_type: MenuType::Main,
+            menu_type,
         }
     }
 
     /// Creates a new Menu with the specified Theme for the specified window handle.
     pub fn new_with_theme(window_handle: isize, theme: Theme) -> Self {
-        Self::new_builder_with_theme(window_handle, theme)
+        Self::new_builder_with_theme(window_handle, theme, MenuType::Main)
     }
 
     /// Creates a new Menu with the specified Theme for the specified HWND.
     pub fn new_for_hwnd_with_theme(hwnd: HWND, theme: Theme) -> Self {
         let window_handle = hwnd.0 as isize;
-        Self::new_builder_with_theme(window_handle, theme)
+        Self::new_builder_with_theme(window_handle, theme, MenuType::Main)
     }
 
-    fn new_builder_with_theme(window_handle: isize, theme: Theme) -> Self {
+    fn new_builder_with_theme(window_handle: isize, theme: Theme, menu_type: MenuType) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -122,22 +118,22 @@ impl MenuBuilder {
             items: Vec::new(),
             config,
             theme,
-            menu_type: MenuType::Main,
+            menu_type,
         }
     }
 
     /// Creates a new Menu using the specified Config for the specified window handle.
     pub fn new_from_config(window_handle: isize, config: Config) -> Self {
-        Self::new_builder_from_config(window_handle, config)
+        Self::new_builder_from_config(window_handle, config, MenuType::Main)
     }
 
     /// Creates a new Menu using the specified Config for the specified HWND.
     pub fn new_for_hwnd_from_config(hwnd: HWND, config: Config) -> Self {
         let window_handle = hwnd.0 as isize;
-        Self::new_builder_from_config(window_handle, config)
+        Self::new_builder_from_config(window_handle, config, MenuType::Main)
     }
 
-    fn new_builder_from_config(window_handle: isize, config: Config) -> Self {
+    fn new_builder_from_config(window_handle: isize, config: Config, menu_type: MenuType) -> Self {
         let mut menu = Menu::default();
         menu.parent_window_handle = window_handle;
         menu.window_handle = menu.create_window(window_handle);
@@ -147,11 +143,6 @@ impl MenuBuilder {
             menu,
             items: Vec::new(),
             config: Config {
-                corner: if !is_win11() && config.corner == Corner::Round {
-                    Corner::DoNotRound
-                } else {
-                    config.corner
-                },
                 icon: if let Some(icon) = config.icon {
                     Some(icon)
                 } else {
@@ -160,7 +151,7 @@ impl MenuBuilder {
                 ..config
             },
             theme,
-            menu_type: MenuType::Main,
+            menu_type,
         }
     }
 
@@ -270,10 +261,8 @@ impl MenuBuilder {
     /// Adds a submenu MenuItem to Menu.
     pub fn submenu(&mut self, id: &str, label: &str, disabled: bool) -> Self {
         let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, None);
-        let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
-        builder.menu_type = MenuType::Submenu;
+        let builder = Self::new_builder_from_config(self.menu.window_handle, self.config.clone(), MenuType::Submenu);
 
-        /* Set dummy menu to be replaced later */
         item.submenu = Some(builder.menu.clone());
         self.items.push(item);
 
@@ -282,10 +271,8 @@ impl MenuBuilder {
 
     pub fn submenu_with_icon(&mut self, id: &str, label: &str, disabled: bool, icon: MenuIcon) -> Self {
         let mut item = MenuItem::new(self.menu.window_handle, id, label, "", "", false, disabled, MenuItemType::Submenu, None, Some(icon));
-        let mut builder = Self::new_from_config(self.menu.window_handle, self.config.clone());
-        builder.menu_type = MenuType::Submenu;
+        let builder = Self::new_builder_from_config(self.menu.window_handle, self.config.clone(), MenuType::Submenu);
 
-        /* Set dummy menu to be replaced later */
         item.submenu = Some(builder.menu.clone());
         self.items.push(item);
 
@@ -293,40 +280,21 @@ impl MenuBuilder {
     }
 
     pub(crate) fn new_for_submenu(parent: &Menu, config: &Config, current_theme: Theme, items: &mut [MenuItem]) -> Self {
-        let config = Config {
-            corner: if !is_win11() && config.corner == Corner::Round {
-                Corner::DoNotRound
-            } else {
-                config.corner
-            },
-            ..config.clone()
-        };
-
-        let mut menu = Menu::default();
-        menu.parent_window_handle = parent.window_handle;
-        menu.window_handle = menu.create_window(parent.window_handle);
-
-        let items: Vec<MenuItem> = items
-            .iter_mut()
-            .map(|item| {
-                item.menu_window_handle = menu.window_handle;
-                item.clone()
-            })
-            .collect();
-
-        Self {
-            menu,
-            items,
-            config,
-            theme: current_theme,
-            menu_type: MenuType::Submenu,
+        let mut builder = Self::new_builder_from_config(parent.window_handle, config.clone(), MenuType::Submenu);
+        for item in items.iter_mut() {
+            item.menu_window_handle = builder.menu.window_handle
         }
+
+        builder.items = items.to_vec();
+        builder.theme = current_theme;
+
+        builder
     }
 
     /// Adds a MenuItem to MenuBuilder.
     pub fn append(&mut self, mut menu_item: MenuItem) -> &Self {
         if menu_item.menu_item_type == MenuItemType::Submenu && menu_item.menu_window_handle == 0 {
-            let mut builder = MenuBuilder::new_for_submenu(&self.menu, &self.config, self.config.theme, menu_item.items.as_mut().unwrap());
+            let builder = MenuBuilder::new_for_submenu(&self.menu, &self.config, self.config.theme, menu_item.items.as_mut().unwrap());
             let submenu = builder.build().unwrap();
             menu_item.menu_window_handle = submenu.parent_window_handle;
             menu_item.submenu = Some(submenu);
@@ -346,7 +314,7 @@ impl MenuBuilder {
 
     /// Build Menu to make it ready to become visible.
     /// Must call this function before showing Menu, otherwise nothing shows up.
-    pub fn build(&mut self) -> Result<Menu, Error> {
+    pub fn build(mut self) -> Result<Menu, Error> {
         let is_main_menu = self.menu_type == MenuType::Main;
 
         #[cfg(feature = "accelerator")]
@@ -366,95 +334,92 @@ impl MenuBuilder {
 
         let dc_render_target = create_render_target()?;
 
-        let check_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().check_svg {
-            create_svg_from_path(&dc_render_target, svg)?
+        let check_icon = if let Some(check_icon) = &self.config.icon.as_ref().unwrap().check {
+            create_menu_image(&dc_render_target, check_icon)?
         } else {
-            create_check_svg(&dc_render_target, &self.config)?
+            MenuImageType::Svg(create_check_svg(&dc_render_target, &self.config)?)
         };
 
-        let submenu_svg_doc = if let Some(svg) = &self.config.icon.as_ref().unwrap().arrow_svg {
-            create_svg_from_path(&dc_render_target, svg)?
+        let submenu_icon = if let Some(submenu_icon) = &self.config.icon.as_ref().unwrap().arrow {
+            create_menu_image(&dc_render_target, submenu_icon)?
         } else {
-            create_submenu_svg(&dc_render_target, &self.config)?
+            MenuImageType::Svg(create_submenu_svg(&dc_render_target, &self.config)?)
         };
 
-        let icon_size = unsafe { check_svg_doc.GetViewportSize().width } as _;
         /* Safe to unwrap icon which is Some(IconSettings::default()) by default */
-        let icon_space = get_icon_space(&self.items, self.config.icon.as_ref().unwrap(), &check_svg_doc, &submenu_svg_doc);
-        let size = calculate(&mut self.items, &self.config, self.config.theme, icon_space);
+        let icon_space = get_icon_space(&self.items, self.config.icon.as_ref().unwrap(), &check_icon, &submenu_icon);
+        let menu_size = calculate(&mut self.items, &self.config, self.config.theme, icon_space)?;
 
         if is_main_menu {
             /* Calculate items in all submenus */
-            self.rebuild_submenu(icon_space);
+            self.rebuild_submenu(icon_space)?;
         }
 
         /* Save icon for reuse */
         let mut icon_map = HashMap::new();
         for item in &self.items {
             if let Some(icon) = &item.icon {
-                let bitmap = create_menu_image(&dc_render_target, icon, icon_size)?;
+                let bitmap = create_menu_image(&dc_render_target, icon)?;
                 icon_map.insert(item.uuid, bitmap);
             }
         }
 
+        let win_subclass_id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        if is_main_menu {
+            self.menu.attach_owner_subclass(win_subclass_id as usize);
+        }
+
         let data = MenuData {
             menu_type: self.menu_type,
-            items: self.items.clone(),
-            win_subclass_id: if is_main_menu {
-                Some(COUNTER.fetch_add(1, Ordering::Relaxed))
-            } else {
-                None
-            },
+            items: self.items,
+            win_subclass_id,
             #[cfg(feature = "accelerator")]
             haccel,
             #[cfg(feature = "accelerator")]
             accelerators,
-            size,
+            size: menu_size,
             icon_space,
             selected_index: -1,
             visible_submenu_index: -1,
             current_theme: self.theme,
-            config: self.config.clone(),
+            config: self.config,
             parent: if is_main_menu {
                 0
             } else {
                 self.menu.parent_window_handle
             },
             dc_render_target,
-            check_svg: check_svg_doc,
-            submenu_svg: submenu_svg_doc,
+            check_icon,
+            submenu_icon,
             popup_info: None,
             icon_map,
-            icon_size,
         };
-
-        if is_main_menu {
-            self.menu.attach_owner_subclass(data.win_subclass_id.unwrap() as usize);
-        }
 
         let hwnd = hwnd!(self.menu.window_handle);
 
         if is_win11() {
-            if self.config.corner == Corner::Round {
+            if data.config.corner == Corner::Round {
                 unsafe { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &DWMWCP_ROUND as *const _ as *const _, size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32)? };
             }
 
-            set_window_border_color(self.menu.window_handle, &data).unwrap();
+            set_window_border_color(self.menu.window_handle, &data)?;
         }
 
-        unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as _) };
+        unsafe { SetWindowLongPtrW(hwnd, GWL_USERDATA, Box::into_raw(Box::new(data)) as isize) };
 
-        Ok(self.menu.clone())
+        Ok(self.menu)
     }
 
-    fn rebuild_submenu(&mut self, icon_space: IconSpace) {
+    fn rebuild_submenu(&mut self, icon_space: IconSpace) -> Result<(), Error> {
         for item in self.items.iter_mut() {
             if item.menu_item_type == MenuItemType::Submenu {
                 let submenu = item.submenu.as_mut().unwrap();
-                submenu.menu_type = MenuType::Submenu;
-                let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, icon_space);
+                // let submenu = item.submenu.as_mut().unwrap();
+                // submenu.menu_type = MenuType::Submenu;
+                let _ = calculate(&mut submenu.items(), &self.config, self.config.theme, icon_space)?;
             }
         }
+        Ok(())
     }
 }
 

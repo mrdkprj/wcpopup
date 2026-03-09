@@ -1,18 +1,20 @@
 mod accelerator;
 mod builder;
-mod direct2d;
+mod image;
 mod menu_item;
 mod util;
 use crate::{config::*, InnerMenuEvent, MenuEvent, MenuItemType, MenuType, ThemeChangeFactor};
 #[cfg(feature = "accelerator")]
 use accelerator::{create_haccel, destroy_haccel, translate_accel};
 pub use builder::*;
-use direct2d::{colorref_to_d2d1_color_f, create_menu_image, create_write_factory, get_device_context, get_text_format, set_fill_color, set_stroke_color, to_2d_rect, TextAlignment};
+use image::{
+    colorref_to_d2d1_color_f, create_menu_image, create_write_factory, get_device_context, get_icon_size, get_text_format, set_svg_color, to_2d_rect, MenuImageType, SvgDocument, TextAlignment,
+};
 pub use menu_item::*;
 use serde::{Deserialize, Serialize};
-use std::mem::size_of;
 #[cfg(feature = "accelerator")]
 use std::rc::Rc;
+use std::{ffi::c_void, mem::size_of};
 use util::*;
 #[cfg(feature = "accelerator")]
 use windows::Win32::UI::WindowsAndMessaging::{MSG, WM_COMMAND, WM_SYSCOMMAND};
@@ -21,7 +23,7 @@ use windows::{
     Win32::{
         Foundation::{HANDLE, HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
-            Direct2D::{D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT},
+            Direct2D::{ID2D1Bitmap1, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ROUNDED_RECT},
             DirectWrite::{DWRITE_MEASURING_MODE_NATURAL, DWRITE_TEXT_ALIGNMENT_TRAILING},
             Gdi::{
                 BeginPaint, ClientToScreen, EndPaint, GetMonitorInfoW, GetWindowDC, InvalidateRect, MonitorFromPoint, MonitorFromWindow, PtInRect, ReleaseDC, ScreenToClient, UpdateWindow, HBRUSH,
@@ -90,13 +92,13 @@ pub(crate) struct Size {
 
 #[derive(Default, Clone, Copy, Debug)]
 pub(crate) struct IconSpace {
-    left: IconSize,
-    mid: IconSize,
-    right: IconSize,
+    left: IconWidth,
+    mid: IconWidth,
+    right: IconWidth,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
-pub(crate) struct IconSize {
+pub(crate) struct IconWidth {
     width: i32,
     lmargin: i32,
     rmargin: i32,
@@ -123,6 +125,7 @@ pub(crate) struct PopupInfo {
 
 impl Menu {
     pub(crate) fn create_window(&self, parent: isize) -> isize {
+        /* Unwrap because nothing can be done without a window */
         create_menu_window(parent).unwrap()
     }
 
@@ -147,7 +150,7 @@ impl Menu {
         } else {
             self.parent_window_handle
         };
-        on_theme_change(window_handle, Some(theme), ThemeChangeFactor::User);
+        let _ = try_change_theme(window_handle, Some(theme), ThemeChangeFactor::User);
     }
 
     /// Gets all MenuItems of Menu.
@@ -199,13 +202,13 @@ impl Menu {
 
         if let Some(index) = index {
             Self::reset_radio(data, data.items[index].clone());
-        } else {
-            Self::reset_radio(data, data.items.last().unwrap().clone());
+        } else if let Some(last_item) = data.items.last() {
+            Self::reset_radio(data, last_item.clone());
         }
     }
 
     fn create_submenu(&mut self, data: &MenuData, item: &mut MenuItem) {
-        let mut builder = MenuBuilder::new_for_submenu(self, &data.config, data.current_theme, item.items.as_mut().unwrap());
+        let builder = MenuBuilder::new_for_submenu(self, &data.config, data.current_theme, item.items.as_mut().unwrap());
         let memnu = builder.build().unwrap();
         item.submenu = Some(memnu);
     }
@@ -250,9 +253,9 @@ impl Menu {
     #[cfg(feature = "accelerator")]
     fn reset_haccel(&self, item: &MenuItem, should_remove: bool) {
         let items = if item.menu_item_type == MenuItemType::Submenu {
-            &item.submenu.as_ref().unwrap().items()
+            item.submenu.as_ref().unwrap().items()
         } else {
-            &vec![item.clone()]
+            vec![item.clone()]
         };
 
         let mut items_with_accel = Vec::new();
@@ -269,8 +272,16 @@ impl Menu {
         let window_handle = if self.menu_type == MenuType::Main {
             self.window_handle
         } else {
-            unsafe { GetParent(hwnd!(self.window_handle)).unwrap().0 as _ }
+            if let Ok(parent) = unsafe { GetParent(hwnd!(self.window_handle)) } {
+                parent.0 as isize
+            } else {
+                0
+            }
         };
+
+        if window_handle == 0 {
+            return;
+        }
 
         let data = get_menu_data_mut(window_handle);
 
@@ -293,7 +304,7 @@ impl Menu {
     pub(crate) fn attach_owner_subclass(&self, id: usize) {
         let hwnd = hwnd!(self.window_handle);
         let parent = get_parent_hwnd(self.parent_window_handle);
-        let _ = unsafe { SetWindowSubclass(parent, Some(menu_owner_subclass_proc), id, Box::into_raw(Box::new(hwnd)) as _) };
+        let _ = unsafe { SetWindowSubclass(parent, Some(menu_owner_subclass_proc), id, Box::into_raw(Box::new(hwnd)) as usize) };
     }
 
     fn start_popup(&self, x: i32, y: i32, attach_thread: bool) {
@@ -318,7 +329,7 @@ impl Menu {
 
         /* Set menu hwnd to property to be used in keyboard hook */
         let prop_name = encode_wide(HOOK_PROP_NAME);
-        unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as _))).unwrap() };
+        let _ = unsafe { SetPropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr()), Some(HANDLE(self.window_handle as *mut c_void))) };
 
         let focus_window_handle = if cfg!(feature = "webview") {
             let focus_hwnd = unsafe { GetFocus() };
@@ -370,8 +381,8 @@ impl Menu {
 }
 
 fn create_local_hooks(menu_thread_id: u32) -> (HHOOK, HHOOK) {
-    let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc), None, menu_thread_id).unwrap() };
-    let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc), None, menu_thread_id).unwrap() };
+    let keyboard_hook = unsafe { SetWindowsHookExW(WH_KEYBOARD, Some(keyboard_hook_proc), None, menu_thread_id).unwrap_or_default() };
+    let mouse_hook = unsafe { SetWindowsHookExW(WH_MOUSE, Some(mouse_hook_proc), None, menu_thread_id).unwrap_or_default() };
     (keyboard_hook, mouse_hook)
 }
 
@@ -389,8 +400,7 @@ fn refresh_menu_icon(data: &mut MenuData, item: &MenuItem, should_remove: bool) 
     if let Some(icon) = &item.icon {
         if should_remove {
             let _ = data.icon_map.remove(&item.uuid);
-        } else {
-            let bitmap = create_menu_image(&data.dc_render_target, icon, data.icon_size).unwrap();
+        } else if let Ok(bitmap) = create_menu_image(&data.dc_render_target, icon) {
             data.icon_map.insert(item.uuid, bitmap);
         }
     }
@@ -407,8 +417,9 @@ fn set_capture(window_handle: isize) {
     /* Prevent mouse input on window beneath menu */
     unsafe { SetCapture(hwnd) };
 
-    let cursor = unsafe { LoadCursorW(None, IDC_ARROW).unwrap() };
-    let _ = unsafe { SetCursor(Some(cursor)) };
+    if let Ok(cursor) = unsafe { LoadCursorW(None, IDC_ARROW) } {
+        let _ = unsafe { SetCursor(Some(cursor)) };
+    }
 }
 
 unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -418,7 +429,7 @@ unsafe extern "system" fn keyboard_hook_proc(ncode: i32, wparam: WPARAM, lparam:
         let prop_name = encode_wide(HOOK_PROP_NAME);
         let data = unsafe { GetPropW(capture_window, PCWSTR::from_raw(prop_name.as_ptr())) };
 
-        unsafe { PostMessageW(Some(hwnd!(data.0)), WM_KEYDOWN, wparam, lparam).unwrap() };
+        let _ = unsafe { PostMessageW(Some(hwnd!(data.0)), WM_KEYDOWN, wparam, lparam) };
         return LRESULT(1);
     }
 
@@ -456,8 +467,8 @@ fn cleanup(window: HWND) {
         let _ = unsafe { RemovePropW(window, PCWSTR::from_raw(prop_name.as_ptr())) };
         /* "parent" in data is the main Menu's window handle. So use GetParent */
         if let Ok(parent) = unsafe { GetParent(window) } {
-            let hwnd = get_parent_hwnd(parent.0 as _);
-            let _ = unsafe { RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id.unwrap() as usize) };
+            let hwnd = get_parent_hwnd(parent.0 as isize);
+            let _ = unsafe { RemoveWindowSubclass(hwnd, Some(menu_owner_subclass_proc), data.win_subclass_id as usize) };
         }
     }
 
@@ -488,22 +499,22 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_PRINTCLIENT => {
-            let hdc = HDC(wparam.0 as _);
+            let hdc = HDC(wparam.0 as *mut c_void);
             let data = get_menu_data(vtoi!(window.0));
-            paint_background(window, data, Some(hdc));
-            paint(hdc, data, data.items.iter().collect()).unwrap();
-            LRESULT(1)
+            let _ = paint_background(window, data, Some(hdc));
+            let _ = paint(hdc, data, data.items.iter().collect());
+            LRESULT(0)
         }
 
         WM_ERASEBKGND => {
             let data = get_menu_data(vtoi!(window.0));
-            paint_background(window, data, None);
+            let _ = paint_background(window, data, None);
             LRESULT(0)
         }
 
         WM_PAINT => {
             let data = get_menu_data(vtoi!(window.0));
-            on_paint(window, data).unwrap();
+            let _ = on_paint(window, data);
             LRESULT(0)
         }
 
@@ -576,7 +587,7 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
             let wide_string_ptr = lparam.0 as *const u16;
             let lparam_str = PCWSTR::from_raw(wide_string_ptr).to_string().unwrap_or_default();
             if lparam_str == "ImmersiveColorSet" {
-                on_theme_change(vtoi!(window.0), None, ThemeChangeFactor::SystemSetting);
+                let _ = try_change_theme(vtoi!(window.0), None, ThemeChangeFactor::SystemSetting);
             }
 
             DefWindowProcW(window, msg, wparam, lparam)
@@ -621,23 +632,19 @@ fn on_mouse_down(window: HWND, msg: u32) {
 }
 
 fn on_mouse_up(window: HWND) {
-    let maybe_hwnd = get_hwnd_from_point(window);
-    if maybe_hwnd.is_none() {
-        return;
-    }
+    if let Some(hwnd) = get_hwnd_from_point(window) {
+        let data = get_menu_data_mut(vtoi!(hwnd.0));
+        let index = index_from_point(hwnd, get_cursor_point(window), data);
 
-    let hwnd = maybe_hwnd.unwrap();
-    let data = get_menu_data_mut(vtoi!(hwnd.0));
-    let index = index_from_point(hwnd, get_cursor_point(window), data);
+        if index < 0 {
+            return;
+        }
 
-    if index < 0 {
-        return;
-    }
-
-    if on_menu_item_selected(data, index as usize) {
-        let menu_item = &data.items[index as usize];
-        init_menu_data(vtoi!(window.0), true);
-        post_message(Some(menu_item));
+        if on_menu_item_selected(data, index as usize) {
+            let menu_item = &data.items[index as usize];
+            init_menu_data(vtoi!(window.0), true);
+            post_message(Some(menu_item));
+        }
     }
 }
 
@@ -707,7 +714,7 @@ fn send_mouse_input(hwnd: HWND, msg: u32) {
     while !parent.0.is_null() {
         let mut rect = RECT::default();
         let _ = unsafe { GetWindowRect(parent, &mut rect) };
-        if unsafe { PtInRect(&mut rect as *const _ as _, cursor_point) }.as_bool() {
+        if unsafe { PtInRect(&rect, cursor_point) }.as_bool() {
             count += 1;
         }
         parent = get_parent_window(parent);
@@ -745,7 +752,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
                 let hwnd_ptr = dwrefdata as *const HWND;
                 let hwnd = unsafe { *hwnd_ptr };
                 if IsWindow(Some(hwnd)).as_bool() {
-                    PostMessageW(Some(hwnd), WM_INACTIVATE, WPARAM(0), LPARAM(0)).unwrap();
+                    let _ = PostMessageW(Some(hwnd), WM_INACTIVATE, WPARAM(0), LPARAM(0));
                 }
             }
             DefSubclassProc(window, msg, wparam, lparam)
@@ -754,7 +761,7 @@ unsafe extern "system" fn menu_owner_subclass_proc(window: HWND, msg: u32, wpara
         WM_THEMECHANGED => {
             let hwnd_ptr = dwrefdata as *const HWND;
             let hwnd = unsafe { *hwnd_ptr };
-            on_theme_change(vtoi!(hwnd.0), None, ThemeChangeFactor::App);
+            let _ = try_change_theme(vtoi!(hwnd.0), None, ThemeChangeFactor::App);
             DefSubclassProc(window, msg, wparam, lparam)
         }
 
@@ -775,8 +782,8 @@ fn finish_popup(info: &PopupInfo, should_restore_focus: bool) {
     let _ = unsafe { RemovePropW(hwnd, PCWSTR::from_raw(prop_name.as_ptr())) };
 
     /* Unhook hooks */
-    let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as _)) };
-    let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.mouse_hook as _)) };
+    let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.keyboard_hook as *mut c_void)) };
+    let _ = unsafe { UnhookWindowsHookEx(HHOOK(info.mouse_hook as *mut c_void)) };
 
     if info.thread_attached {
         let _ = unsafe { AttachThreadInput(info.current_thread_id, info.menu_thread_id, false) };
@@ -844,7 +851,7 @@ fn index_of_item(data: &mut MenuData, uuid: u16) -> Option<(&mut MenuData, usize
     None
 }
 
-fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
+fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) -> Result<(), Error> {
     let dc = if let Some(hdc) = hdc {
         hdc
     } else {
@@ -852,20 +859,20 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
     };
 
     if dc.0.is_null() {
-        return;
+        return Ok(());
     }
 
     let scheme = get_color_scheme(data);
 
     let mut client_rect = RECT::default();
-    unsafe { GetClientRect(hwnd, &mut client_rect).unwrap() };
+    unsafe { GetClientRect(hwnd, &mut client_rect) }?;
 
-    unsafe { data.dc_render_target.BindDC(dc, &client_rect).unwrap() };
+    unsafe { data.dc_render_target.BindDC(dc, &client_rect) }?;
     unsafe { data.dc_render_target.BeginDraw() };
 
     /* Draw border only if border size is set */
     if data.config.size.border_size > 0 {
-        let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None).unwrap() };
+        let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.border), None) }?;
         /* Rounded corner is non client area. So no need to use FillRoundedRectangle */
         unsafe { data.dc_render_target.FillRectangle(&to_2d_rect(&client_rect), &brush) };
     }
@@ -877,7 +884,7 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         bottom: client_rect.bottom - data.config.size.border_size,
     };
 
-    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.background_color), None).unwrap() };
+    let brush = unsafe { data.dc_render_target.CreateSolidColorBrush(&colorref_to_d2d1_color_f(scheme.background_color), None) }?;
 
     if data.config.corner == Corner::Round {
         unsafe {
@@ -895,11 +902,13 @@ fn paint_background(hwnd: HWND, data: &MenuData, hdc: Option<HDC>) {
         unsafe { data.dc_render_target.FillRectangle(&to_2d_rect(&menu_rect), &brush) };
     }
 
-    unsafe { data.dc_render_target.EndDraw(None, None).unwrap() };
+    let _ = unsafe { data.dc_render_target.EndDraw(None, None) };
 
     if hdc.is_none() {
         unsafe { ReleaseDC(Some(hwnd), dc) };
     }
+
+    Ok(())
 }
 
 fn on_paint(hwnd: HWND, data: &MenuData) -> Result<(), Error> {
@@ -933,7 +942,7 @@ fn paint(dc: HDC, data: &MenuData, items: Vec<&MenuItem>) -> Result<(), Error> {
         bottom: data.size.height,
     };
 
-    unsafe { data.dc_render_target.BindDC(dc, &client_rect).unwrap() };
+    unsafe { data.dc_render_target.BindDC(dc, &client_rect) }?;
     unsafe { data.dc_render_target.BeginDraw() };
 
     for item in items {
@@ -965,15 +974,15 @@ fn paint(dc: HDC, data: &MenuData, items: Vec<&MenuItem>) -> Result<(), Error> {
                 };
 
                 if checked {
-                    draw_checkmark(data, &item_rect, scheme, disabled)?;
+                    draw_menu_checkmark(data, &item_rect, scheme, disabled)?;
                 }
 
                 if item.icon.is_some() {
-                    draw_icon(data, item, &item_rect, scheme, disabled)?;
+                    draw_menu_icon(data, item, &item_rect, scheme, disabled)?;
                 }
 
                 if item.menu_item_type == MenuItemType::Submenu {
-                    draw_submenu_arrow(data, &item_rect, scheme, disabled)?;
+                    draw_menu_arrow(data, &item_rect, scheme, disabled)?;
                 }
 
                 draw_menu_text(data, item, &item_rect, scheme, disabled)?;
@@ -1000,7 +1009,31 @@ fn to_vertical_middle(top: i32, item_height: i32, target_height: i32) -> i32 {
     top + ((item_height as f32 - target_height as f32) / 2.0).ceil() as i32
 }
 
-fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+fn draw_bitmap(data: &MenuData, bitmap: &ID2D1Bitmap1, item_rect: &RECT, mut rect: RECT, icon_size: &Size) -> Result<(), Error> {
+    rect.right = rect.left + icon_size.width;
+    rect.top = to_vertical_middle(rect.top, item_rect.bottom - item_rect.top, icon_size.height);
+    rect.bottom = rect.top + icon_size.height;
+    unsafe { data.dc_render_target.DrawBitmap(bitmap, Some(&to_2d_rect(&rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, None) };
+    Ok(())
+}
+
+fn draw_svg(data: &MenuData, svg: &SvgDocument, color: u32, item_rect: &RECT, rect: RECT, icon_size: &Size) -> Result<(), Error> {
+    let dc5 = get_device_context(&data.dc_render_target)?;
+    let element = unsafe { svg.document.GetRoot() }?;
+    if svg.color_required {
+        set_svg_color(&element, color)?;
+    }
+    let left = rect.left;
+    let top = to_vertical_middle(rect.top, item_rect.bottom - item_rect.top, icon_size.height);
+    let translation = Matrix3x2::translation(left as f32, top as f32);
+    unsafe { dc5.SetTransform(&translation) };
+    unsafe { dc5.DrawSvgDocument(&svg.document) };
+    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+
+    Ok(())
+}
+
+fn draw_menu_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
     let space = data.icon_space.left;
     let check_rect = RECT {
         left: item_rect.left + space.lmargin,
@@ -1014,53 +1047,36 @@ fn draw_checkmark(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disab
     } else {
         scheme.color
     };
+    let icon_size = get_icon_size(&data.check_icon);
 
-    let dc5 = get_device_context(&data.dc_render_target)?;
-
-    let element = unsafe { data.check_svg.GetRoot() }?;
-    set_fill_color(&element, color);
-    set_stroke_color(&element, color);
-
-    let top = to_vertical_middle(check_rect.top, item_rect.bottom - item_rect.top, check_rect.bottom - check_rect.top);
-    let translation = Matrix3x2::translation(check_rect.left as f32, top as f32);
-    unsafe { dc5.SetTransform(&translation) };
-    unsafe { dc5.DrawSvgDocument(&data.check_svg) };
-    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
-
-    Ok(())
+    match &data.check_icon {
+        MenuImageType::Bitmap(bitmap) => draw_bitmap(data, bitmap, item_rect, check_rect, &icon_size),
+        MenuImageType::Svg(svg) => draw_svg(data, svg, color, item_rect, check_rect, &icon_size),
+    }
 }
 
-fn draw_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+fn draw_menu_icon(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
     let space = data.icon_space.mid;
     let check_margin = data.icon_space.left.lmargin + data.icon_space.left.width + data.icon_space.left.rmargin;
-    let mut icon_rect = RECT {
+    let icon_rect = RECT {
         left: item_rect.left + check_margin + space.lmargin,
         top: item_rect.top,
         right: item_rect.left + check_margin + space.lmargin + space.width + space.rmargin,
         bottom: item_rect.top + space.width,
     };
 
-    match data.icon_map.get(&item.uuid).unwrap() {
-        MenuImageType::Bitmap(bitmap) => {
-            icon_rect.right = icon_rect.left + data.icon_space.mid.width;
-            icon_rect.top = to_vertical_middle(icon_rect.top, item_rect.bottom - item_rect.top, icon_rect.bottom - icon_rect.top);
-            icon_rect.bottom = icon_rect.top + space.width;
-            unsafe { data.dc_render_target.DrawBitmap(bitmap, Some(&to_2d_rect(&icon_rect)), 1.0, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR, None) };
-        }
-        MenuImageType::Svg(svg) => {
-            let dc5 = get_device_context(&data.dc_render_target)?;
-            let color = if disabled {
-                scheme.disabled
-            } else {
-                scheme.color
-            };
-            let element = unsafe { svg.GetRoot() }?;
-            set_fill_color(&element, color);
-            let top = to_vertical_middle(icon_rect.top, item_rect.bottom - item_rect.top, icon_rect.bottom - icon_rect.top);
-            let translation = Matrix3x2::translation(icon_rect.left as f32, top as f32);
-            unsafe { dc5.SetTransform(&translation) };
-            unsafe { dc5.DrawSvgDocument(svg) };
-            unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
+    let color = if disabled {
+        scheme.disabled
+    } else {
+        scheme.color
+    };
+
+    if let Some(icon) = data.icon_map.get(&item.uuid) {
+        let icon_size = get_icon_size(icon);
+
+        match icon {
+            MenuImageType::Bitmap(bitmap) => draw_bitmap(data, bitmap, item_rect, icon_rect, &icon_size)?,
+            MenuImageType::Svg(svg) => draw_svg(data, svg, color, item_rect, icon_rect, &icon_size)?,
         }
     }
 
@@ -1124,13 +1140,13 @@ fn draw_menu_text(data: &MenuData, item: &MenuItem, item_rect: &RECT, scheme: &C
     Ok(())
 }
 
-fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
-    let icon_width = data.icon_space.right.width;
+fn draw_menu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, disabled: bool) -> Result<(), Error> {
+    let width = data.icon_space.right.width;
     let arrow_rect = RECT {
-        left: item_rect.right - icon_width,
+        left: item_rect.right - width,
         top: item_rect.top,
         right: item_rect.right,
-        bottom: item_rect.top + icon_width,
+        bottom: item_rect.top + width,
     };
 
     let color = if disabled {
@@ -1138,20 +1154,12 @@ fn draw_submenu_arrow(data: &MenuData, item_rect: &RECT, scheme: &ColorScheme, d
     } else {
         scheme.color
     };
+    let icon_size = get_icon_size(&data.submenu_icon);
 
-    let dc5 = get_device_context(&data.dc_render_target)?;
-
-    let element = unsafe { data.submenu_svg.GetRoot() }?;
-    set_fill_color(&element, color);
-    set_stroke_color(&element, color);
-
-    let top = to_vertical_middle(arrow_rect.top, item_rect.bottom - item_rect.top, arrow_rect.bottom - arrow_rect.top);
-    let translation = Matrix3x2::translation(arrow_rect.left as f32, top as f32);
-    unsafe { dc5.SetTransform(&translation) };
-    unsafe { dc5.DrawSvgDocument(&data.submenu_svg) };
-    unsafe { dc5.SetTransform(&Matrix3x2::identity()) };
-
-    Ok(())
+    match &data.submenu_icon {
+        MenuImageType::Bitmap(bitmap) => draw_bitmap(data, bitmap, item_rect, arrow_rect, &icon_size),
+        MenuImageType::Svg(svg) => draw_svg(data, svg, color, item_rect, arrow_rect, &icon_size),
+    }
 }
 
 fn draw_separator(data: &MenuData, rect: &RECT, scheme: &ColorScheme) -> Result<(), Error> {
@@ -1304,7 +1312,7 @@ fn show_submenu(window_handle: isize) {
 }
 
 unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
-    KillTimer(Some(hwnd), id).unwrap();
+    let _ = KillTimer(Some(hwnd), id);
 
     let main_menu_data = get_menu_data(vtoi!(hwnd.0));
 
@@ -1319,7 +1327,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
         }
 
         let mut main_menu_rect = RECT::default();
-        GetWindowRect(hwnd, &mut main_menu_rect).unwrap();
+        let _ = GetWindowRect(hwnd, &mut main_menu_rect);
 
         let pt = get_display_point(submenu_window_handle, main_menu_rect.right, main_menu_rect.top + submenu_item.top, submenu_data.size.width, submenu_data.size.height);
 
@@ -1347,7 +1355,7 @@ unsafe extern "system" fn delay_show_submenu(hwnd: HWND, _msg: u32, id: usize, _
             main_menu_rect.top + submenu_item.top - main_menu_data.config.size.vertical_padding - round_corner_size - main_menu_data.config.size.border_size
         };
 
-        SetWindowPos(hwnd!(submenu_window_handle), Some(HWND_TOP), x, y, submenu_data.size.width, submenu_data.size.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE).unwrap();
+        let _ = SetWindowPos(hwnd!(submenu_window_handle), Some(HWND_TOP), x, y, submenu_data.size.width, submenu_data.size.height, SWP_ASYNCWINDOWPOS | SWP_NOOWNERZORDER | SWP_NOACTIVATE);
         animate_show_window(submenu_window_handle);
     }
 }
@@ -1367,7 +1375,7 @@ fn animate_hide_submenu(window_handle: isize) {
 }
 
 unsafe extern "system" fn delay_hide_submenu(hwnd: HWND, _msg: u32, id: usize, _time: u32) {
-    KillTimer(Some(hwnd), id).unwrap();
+    let _ = KillTimer(Some(hwnd), id);
     let data = get_menu_data_mut(vtoi!(hwnd.0));
     data.selected_index = -1;
     let _ = unsafe { ShowWindow(hwnd, SW_HIDE) };
@@ -1384,7 +1392,7 @@ fn get_item_rect(item: &MenuItem) -> RECT {
 
 fn get_cursor_point(_hwnd: HWND) -> POINT {
     let mut pt = POINT::default();
-    unsafe { GetCursorPos(&mut pt).unwrap() };
+    let _ = unsafe { GetCursorPos(&mut pt) };
     pt
 }
 
@@ -1447,17 +1455,17 @@ fn get_hwnd_from_point(hwnd: HWND) -> Option<HWND> {
     None
 }
 
-fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) {
+fn try_change_theme(window_handle: isize, maybe_preferred_theme: Option<Theme>, factor: ThemeChangeFactor) -> Result<(), Error> {
     let data = get_menu_data_mut(window_handle);
     if data.menu_type == MenuType::Submenu {
-        return;
+        return Ok(());
     }
 
     let current_them = data.current_theme;
 
     /* Don't respont to setting change event unless theme is System */
     if current_them != Theme::System && factor == ThemeChangeFactor::SystemSetting {
-        return;
+        return Ok(());
     }
 
     let should_be_dark = match factor {
@@ -1493,7 +1501,7 @@ fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, f
     };
 
     data.current_theme = new_theme;
-    set_window_border_color(window_handle, data).unwrap();
+    set_window_border_color(window_handle, data)?;
     let hwnd = hwnd!(window_handle);
     let _ = unsafe { UpdateWindow(hwnd) };
 
@@ -1504,10 +1512,12 @@ fn on_theme_change(window_handle: isize, maybe_preferred_theme: Option<Theme>, f
             let submenu_hwnd = hwnd!(submenu_window_handle);
             let submenu_data = get_menu_data_mut(submenu_window_handle);
             submenu_data.current_theme = new_theme;
-            set_window_border_color(submenu_window_handle, data).unwrap();
+            set_window_border_color(submenu_window_handle, data)?;
             let _ = unsafe { UpdateWindow(submenu_hwnd) };
         }
     }
+
+    Ok(())
 }
 
 fn create_menu_window(parent: isize) -> Result<isize, Error> {
@@ -1533,8 +1543,7 @@ fn create_menu_window(parent: isize) -> Result<isize, Error> {
     let window_styles = WS_POPUP | WS_CLIPSIBLINGS;
     let ex_style = WS_EX_TOOLWINDOW | WS_EX_LAYERED;
 
-    let hwnd =
-        unsafe { CreateWindowExW(ex_style, class_name, PCWSTR::null(), window_styles, 0, 0, 0, 0, Some(hwnd!(parent)), None, GetModuleHandleW(PCWSTR::null()).map(Into::into).ok(), None).unwrap() };
+    let hwnd = unsafe { CreateWindowExW(ex_style, class_name, PCWSTR::null(), window_styles, 0, 0, 0, 0, Some(hwnd!(parent)), None, GetModuleHandleW(PCWSTR::null()).map(Into::into).ok(), None) }?;
 
     let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 

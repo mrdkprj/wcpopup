@@ -1,9 +1,12 @@
 use super::{
     create_write_factory,
-    direct2d::{get_icon_space, get_text_metrics},
-    ColorScheme, Config, Corner, IconSpace, MenuData, MenuItem, MenuItemType, Size, Theme, CORNER_RADIUS, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH,
+    image::{get_icon_space, get_text_metrics},
+    IconSpace, MenuData, MenuItem, Size, CORNER_RADIUS, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH,
 };
-use crate::config::{hex_from_rgb, rgba_from_hex};
+use crate::{
+    config::{hex_from_rgb, rgba_from_hex, ColorScheme, Config, Corner, Theme},
+    MenuItemType,
+};
 use std::{
     mem::{size_of, transmute},
     os::windows::ffi::OsStrExt,
@@ -101,7 +104,7 @@ pub(crate) fn toggle_radio(data: &mut MenuData, index: usize) {
     }
 }
 
-pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Size {
+pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, icon_space: IconSpace) -> Result<Size, Error> {
     let mut width = 0;
     let mut height = 0;
 
@@ -114,7 +117,7 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
         height += CORNER_RADIUS;
     }
 
-    let factory = create_write_factory().unwrap();
+    let factory = create_write_factory()?;
 
     /* Find the widest accelerator string */
     let mut widest_accel = (0.0, "");
@@ -125,7 +128,7 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
     for accel in accels {
         if !accel.is_empty() {
             let mut raw_text = encode_wide(accel);
-            let metrics = get_text_metrics(&factory, theme, config, &mut raw_text).unwrap();
+            let metrics = get_text_metrics(&factory, theme, config, &mut raw_text)?;
             if metrics.width >= widest_accel.0 {
                 widest_accel = (metrics.width, accel);
             }
@@ -147,7 +150,7 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
 
         item.top = height;
         item.left = config.size.border_size + config.size.horizontal_padding;
-        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space, widest_accel.1).unwrap();
+        let (item_width, item_height) = measure_item(&factory, config, item, theme, icon_space, widest_accel.1)?;
         item.bottom = item.top + item_height;
 
         width = std::cmp::max(width, item_width);
@@ -173,15 +176,17 @@ pub(crate) fn calculate(items: &mut [MenuItem], config: &Config, theme: Theme, i
     width += config.size.border_size * 2;
     height += config.size.border_size;
 
-    Size {
+    Ok(Size {
         width,
         height,
-    }
+    })
 }
 
 pub(crate) fn recalculate(data: &mut MenuData) {
-    data.icon_space = get_icon_space(&data.items, data.config.icon.as_ref().unwrap(), &data.check_svg, &data.submenu_svg);
-    data.size = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space);
+    data.icon_space = get_icon_space(&data.items, data.config.icon.as_ref().unwrap(), &data.check_icon, &data.submenu_icon);
+    if let Ok(size) = calculate(&mut data.items, &data.config, data.current_theme, data.icon_space) {
+        data.size = size;
+    }
 }
 
 pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, menu_item: &MenuItem, theme: Theme, icon_space: IconSpace, widest_accel: &str) -> Result<(i32, i32), Error> {
@@ -207,7 +212,8 @@ pub(crate) fn measure_item(factory: &IDWriteFactory, config: &Config, menu_item:
             if height < 0 {
                 height = -height;
             }
-            let icon_height = std::cmp::max(icon_space.left.width, icon_space.right.width);
+            let icon_height = std::cmp::max(icon_space.left.width, icon_space.mid.width);
+            let icon_height = std::cmp::max(icon_space.right.width, icon_height);
             if height < icon_height {
                 height += icon_height - height;
             }
@@ -299,10 +305,16 @@ pub(crate) fn should_apps_use_dark_mode() -> bool {
 }
 
 pub(crate) fn is_sys_dark_color() -> bool {
-    let settings = UISettings::new().unwrap();
-    let clr = settings.GetColorValue(UIColorType::Background).unwrap();
-    let sum: u32 = (5 * clr.G as u32) + (2 * clr.R as u32) + (clr.B as u32);
-    sum <= (8 * 128)
+    if let Ok(settings) = UISettings::new() {
+        if let Ok(color) = settings.GetColorValue(UIColorType::Background) {
+            let sum: u32 = (5 * color.G as u32) + (2 * color.R as u32) + (color.B as u32);
+            sum <= (8 * 128)
+        } else {
+            false
+        }
+    } else {
+        false
+    }
 }
 
 pub(crate) struct ComGuard;

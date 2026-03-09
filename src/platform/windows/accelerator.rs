@@ -85,9 +85,10 @@ pub(crate) fn create_haccel(accelerators: &HashMap<u16, String>) -> Option<HACCE
 
     if accels.is_empty() {
         None
-    } else {
-        let haccel = unsafe { CreateAcceleratorTableW(&accels).unwrap() };
+    } else if let Ok(haccel) = unsafe { CreateAcceleratorTableW(&accels) } {
         Some(haccel)
+    } else {
+        None
     }
 }
 

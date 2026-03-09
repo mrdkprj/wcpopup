@@ -1,5 +1,5 @@
+use crate::MenuIcon;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Theme {
@@ -220,10 +220,10 @@ pub enum FontWeight {
 /// Icon settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IconSettings {
-    /// SVG to override the default check-mark SVG for check/radio menu item.
-    pub check_svg: Option<MenuSVG>,
-    /// SVG to override the default arrow SVG for submenu item.
-    pub arrow_svg: Option<MenuSVG>,
+    /// Icon to override the default check-mark SVG for check/radio menu item.
+    pub check: Option<MenuIcon>,
+    /// Icon to override the default arrow SVG for submenu item.
+    pub arrow: Option<MenuIcon>,
     /// Whether to reserve space for icons regardless of their actual presence.
     pub reserve_icon_size: bool,
     /// Left and right margins of the icons set to menu items.
@@ -233,19 +233,12 @@ pub struct IconSettings {
 impl Default for IconSettings {
     fn default() -> Self {
         Self {
-            check_svg: None,
-            arrow_svg: None,
+            check: None,
+            arrow: None,
             reserve_icon_size: true,
             horizontal_margin: None,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MenuSVG {
-    pub path: PathBuf,
-    pub width: i32,
-    pub height: i32,
 }
 
 #[derive(Debug)]
@@ -256,7 +249,6 @@ pub struct RGBA {
     pub a: f32,
 }
 
-#[cfg(target_os = "windows")]
 pub(crate) fn to_hex_string(color: u32) -> String {
     if has_alpha(color) {
         format!("#{:08x}", color)

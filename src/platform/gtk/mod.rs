@@ -49,12 +49,13 @@ impl Menu {
 
         if let Some(menu_conainer_widget) = gtk_menu.parent() {
             /* Set window border radius and background color */
-            let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
-            gtk_window.set_widget_name(widget_name);
-            let provider = CssProvider::new();
-            let css = get_window_css(config);
-            provider.load_from_data(css.as_bytes()).unwrap();
-            gtk_window.style_context().add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
+            if let Ok(gtk_window) = menu_conainer_widget.dynamic_cast::<gtk::Window>() {
+                gtk_window.set_widget_name(widget_name);
+                let provider = CssProvider::new();
+                let css = get_window_css(config);
+                provider.load_from_data(css.as_bytes()).unwrap();
+                gtk_window.style_context().add_provider(&provider, STYLE_PROVIDER_PRIORITY_APPLICATION);
+            }
         }
 
         let (parent_gtk_menu_handle, gtk_window_handle, menu_type) = match parent {
@@ -138,13 +139,12 @@ impl Menu {
         self.add_item(item, Some(index as i32));
     }
 
-    fn add_item(&mut self, item: MenuItem, index: Option<i32>) {
-        let mut item = item.clone();
-
+    fn add_item(&mut self, mut item: MenuItem, index: Option<i32>) {
         let gtk_menu = to_gtk_menu(self.gtk_menu_handle);
         let data = get_menu_data(self.gtk_menu_handle);
 
         let gtk_menu_item = self.new_gtk_menu_item(&mut item, &data.config);
+
         if let Some(index) = index {
             gtk_menu.insert(&gtk_menu_item, index);
         } else {
@@ -162,7 +162,7 @@ impl Menu {
 
     fn new_gtk_menu_item(&mut self, item: &mut MenuItem, config: &Config) -> gtk::MenuItem {
         match item.menu_item_type {
-            MenuItemType::Submenu => self.create_submenu(item, config),
+            MenuItemType::Submenu => MenuBuilder::new_submenu_with_items(self, item, config),
             MenuItemType::Radio => {
                 if let Some(radio) = self.items().iter().find(|existing_item| existing_item.name == item.name) {
                     let mut radio_groups = radio_group_from_item(radio);
@@ -173,14 +173,6 @@ impl Menu {
             }
             _ => create_gtk_menu_item(self.gtk_menu_handle, item, None, None, config),
         }
-    }
-
-    fn create_submenu(&mut self, item: &mut MenuItem, config: &Config) -> gtk::MenuItem {
-        let mut builder = MenuBuilder::new_for_submenu(self, item, config);
-        let submenu = builder.build().unwrap();
-        let gtk_menu_item = create_gtk_menu_item(self.gtk_menu_handle, item, Some(&builder.gtk_submenu), None, config);
-        item.submenu = Some(submenu);
-        gtk_menu_item
     }
 
     /// Removes the MenuItem at the specified index.
@@ -235,7 +227,7 @@ impl Menu {
         if !event_ffi.is_null() {
             let time = monotonic_time() / 1000;
             unsafe {
-                (*event_ffi).button.time = time as _;
+                (*event_ffi).button.time = time as u32;
             }
         }
 
@@ -265,7 +257,7 @@ impl Menu {
                 if !event_ffi.is_null() {
                     let time = monotonic_time() / 1000;
                     unsafe {
-                        (*event_ffi).button.time = time as _;
+                        (*event_ffi).button.time = time as u32;
                     }
                 }
 
@@ -409,29 +401,32 @@ fn on_theme_change(menu_type: MenuType, gtk_menu_handle: isize, maybe_preferred_
 
     let gtk_menu = to_gtk_menu(gtk_menu_handle);
     if let Some(menu_conainer_widget) = gtk_menu.parent() {
-        let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
-        gtk_window.set_widget_name(widget_name);
+        if let Ok(gtk_window) = menu_conainer_widget.dynamic_cast::<gtk::Window>() {
+            gtk_window.set_widget_name(widget_name);
+        }
     }
     gtk_menu.set_widget_name(widget_name);
 
-    change_style(&gtk_menu.children(), new_theme, widget_name);
+    change_style(&gtk_menu.children(), new_theme, widget_name, data);
 }
 
-fn change_style(gtk_menu_items: &Vec<Widget>, new_theme: Theme, widget_name: &str) {
+fn change_style(gtk_menu_items: &Vec<Widget>, new_theme: Theme, widget_name: &str, data: &MenuData) {
     for gtk_menu_item in gtk_menu_items {
         gtk_menu_item.set_widget_name(widget_name);
+        apply_theme_to_svg_data(gtk_menu_item, data);
 
-        if let Some(widget) = gtk_menu_item.downcast_ref::<gtk::MenuItem>().unwrap().submenu() {
-            let gtk_submenu = widget.downcast::<gtk::Menu>().unwrap();
+        if let Some(submenu) = gtk_menu_item.downcast_ref::<gtk::MenuItem>().unwrap().submenu() {
+            let gtk_submenu = submenu.downcast::<gtk::Menu>().unwrap();
             let submenu_handle = from_gtk_menu(&gtk_submenu);
             let submenu_data = get_menu_data_mut(submenu_handle);
             submenu_data.config.theme = new_theme;
             if let Some(menu_conainer_widget) = gtk_submenu.parent() {
-                let gtk_window = menu_conainer_widget.dynamic_cast::<gtk::Window>().unwrap();
-                gtk_window.set_widget_name(widget_name);
+                if let Ok(gtk_window) = menu_conainer_widget.dynamic_cast::<gtk::Window>() {
+                    gtk_window.set_widget_name(widget_name);
+                }
             }
             gtk_submenu.set_widget_name(widget_name);
-            change_style(&gtk_submenu.children(), new_theme, widget_name);
+            change_style(&gtk_submenu.children(), new_theme, widget_name, data);
         }
     }
 }

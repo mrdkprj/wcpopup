@@ -1,12 +1,18 @@
-use super::{Config, Theme};
-use crate::{config::to_rgba_string, platform::platform_impl::to_font_weight, Corner, RgbaIcon, SvgData};
-use std::path::Path;
+use super::{
+    to_font_weight,
+    util::{get_custom_check_width, is_svg},
+};
+use crate::{
+    config::{to_rgba_string, Config, Theme},
+    Corner, DataIcon, MenuIconKind, PathIcon, SvgIcon,
+};
 
 const CORNER_RADIUS: i32 = 8;
 
 const WIDGET_NAME: &str = "wcpopup";
 const DARK_WIDGET_NAME: &str = "wcpopup-dark";
 const LIGHT_WIDGET_NAME: &str = "wcpopup-light";
+pub(crate) const CUSTOM_CHECKMARK_NAME: &str = "wcpopup-check";
 
 pub(crate) fn get_widget_name<'a>(theme: Theme) -> &'a str {
     match theme {
@@ -149,17 +155,30 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
 
     let font_size = config.font.dark_font_size.max(config.font.light_font_size);
 
-    let check = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
-        format!(
-            r#"
-                -gtk-icon-source: -gtk-recolor(url("{}"));
-                min-width: {}px;
-                min-height: {}px;
-            "#,
-            svg.path.to_string_lossy(),
-            svg.width,
-            svg.height,
-        )
+    let check = if let Some(check) = &config.icon.as_ref().unwrap().check {
+        match &check.icon {
+            MenuIconKind::Path(icon) => {
+                format!(
+                    r#"
+                        min-width: {}px;
+                        min-height: {}px;
+                    "#,
+                    icon.width, icon.height,
+                )
+            }
+            _ => "
+                -gtk-icon-source:none;
+                min-width: 0px;
+                min-height: 0px;
+                padding:0;
+                margin:0;
+                border:none;
+                outline:none;
+                background-image:none;
+                opacity:0;
+                "
+            .to_string(),
+        }
     } else {
         format!(
             r#"
@@ -169,17 +188,71 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         )
     };
 
-    let arrow = if let Some(svg) = &config.icon.as_ref().unwrap().arrow_svg {
-        format!(
-            r#"
-                -gtk-icon-source: -gtk-recolor(url("{}"));
-                min-width: {}px;
-                min-height: {}px;
-            "#,
-            svg.path.to_string_lossy(),
-            svg.width,
-            svg.height,
-        )
+    let checked = if let Some(check) = &config.icon.as_ref().unwrap().check {
+        match &check.icon {
+            MenuIconKind::Path(icon) => {
+                if is_svg(&icon.path) {
+                    format!(
+                        r#"
+                            -gtk-icon-source: -gtk-recolor(url("{}"));
+                        "#,
+                        icon.path.display(),
+                    )
+                } else {
+                    format!(
+                        r#"
+                            -gtk-icon-source: url("{}");
+                        "#,
+                        icon.path.display(),
+                    )
+                }
+            }
+            _ => String::new(),
+        }
+    } else {
+        String::new()
+    };
+
+    let arrow = if let Some(arrow) = &config.icon.as_ref().unwrap().arrow {
+        match &arrow.icon {
+            MenuIconKind::Path(icon) => {
+                if is_svg(&icon.path) {
+                    format!(
+                        r#"
+                            -gtk-icon-source: -gtk-recolor(url("{}"));
+                            min-width: {}px;
+                            min-height: {}px;
+                        "#,
+                        icon.path.display(),
+                        icon.width,
+                        icon.height,
+                    )
+                } else {
+                    format!(
+                        r#"
+                            -gtk-icon-source: url("{}");
+                            min-width: {}px;
+                            min-height: {}px;
+                        "#,
+                        icon.path.display(),
+                        icon.width,
+                        icon.height,
+                    )
+                }
+            }
+            _ => "
+                    -gtk-icon-source:none;
+                    min-width: 0px;
+                    min-height: 0px;
+                    padding:0;
+                    margin:0;
+                    border:none;
+                    outline:none;
+                    background-image:none;
+                    opacity:0;
+                "
+            .to_string(),
+        }
     } else {
         format!(
             r#"
@@ -191,60 +264,80 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
 
     format!(
         r#"
-            menuitem#{WIDGET_NAME} accelerator,
-            menuitem#{DARK_WIDGET_NAME} accelerator,
-            menuitem#{LIGHT_WIDGET_NAME} accelerator {{
+            #{WIDGET_NAME} accelerator,
+            #{DARK_WIDGET_NAME} accelerator,
+            #{LIGHT_WIDGET_NAME} accelerator {{
                 font: {}px "{}";
                 font-weight: {};
             }}
-            menuitem#{DARK_WIDGET_NAME} accelerator {{
+            #{DARK_WIDGET_NAME} accelerator {{
                 color: {};
             }}
-            menuitem#{LIGHT_WIDGET_NAME} accelerator {{
+            #{LIGHT_WIDGET_NAME} accelerator {{
                 color: {};
             }}
 
-            menuitem#{WIDGET_NAME} check,
-            menuitem#{DARK_WIDGET_NAME} check,
-            menuitem#{LIGHT_WIDGET_NAME} check {{
+            #{WIDGET_NAME} check,
+            #{DARK_WIDGET_NAME} check,
+            #{LIGHT_WIDGET_NAME} check {{
                 border-width: 0px;
                 outline-width: 0px;
             }}
-            menuitem#{DARK_WIDGET_NAME} check:checked,
-            menuitem#{LIGHT_WIDGET_NAME} check:checked{{
+            #{WIDGET_NAME} check:not(:checked)+box image#{CUSTOM_CHECKMARK_NAME}:first-child,
+            #{DARK_WIDGET_NAME} check:not(:checked)+box image#{CUSTOM_CHECKMARK_NAME}:first-child,
+            #{LIGHT_WIDGET_NAME} check:not(:checked)+box image#{CUSTOM_CHECKMARK_NAME}:first-child{{
+                opacity:0;
+            }}
+            #{WIDGET_NAME} check:checked+box image#{CUSTOM_CHECKMARK_NAME}:first-child,
+            #{DARK_WIDGET_NAME} check:checked+box image#{CUSTOM_CHECKMARK_NAME}:first-child,
+            #{LIGHT_WIDGET_NAME} check:checked+box image#{CUSTOM_CHECKMARK_NAME}:first-child{{
+                opacity:1;
+            }}
+            #{WIDGET_NAME} check,
+            #{DARK_WIDGET_NAME} check,
+            #{LIGHT_WIDGET_NAME} check{{
                 {}
             }}
-            menuitem#{DARK_WIDGET_NAME} check {{
+            #{WIDGET_NAME} check:checked,
+            #{DARK_WIDGET_NAME} check:checked,
+            #{LIGHT_WIDGET_NAME} check:checked{{
+                {}
+            }}
+            #{DARK_WIDGET_NAME} check,
+            #{DARK_WIDGET_NAME} check:checked {{
                 color: {};
                 background-color: {};
             }}
-            menuitem#{LIGHT_WIDGET_NAME} check {{
+            #{LIGHT_WIDGET_NAME} check,
+            #{LIGHT_WIDGET_NAME} check:checked {{
                 color: {};
                 background-color: {};
             }}
-            menuitem#{DARK_WIDGET_NAME} check:hover {{
+            #{DARK_WIDGET_NAME} check:hover,
+            #{DARK_WIDGET_NAME} check:checked:hover {{
                 background-color: {};
             }}
-            menuitem#{LIGHT_WIDGET_NAME} check:hover {{
+            #{LIGHT_WIDGET_NAME} check:hover,
+            #{LIGHT_WIDGET_NAME} check:checked:hover {{
                 background-color: {};
             }}
 
-            menuitem#{DARK_WIDGET_NAME} arrow,
-            menuitem#{LIGHT_WIDGET_NAME} arrow {{
+            #{DARK_WIDGET_NAME} arrow,
+            #{LIGHT_WIDGET_NAME} arrow {{
                 {}
             }}
-            menu#{DARK_WIDGET_NAME} menuitem#{DARK_WIDGET_NAME} arrow {{
+            #{DARK_WIDGET_NAME} arrow {{
                 color: {};
                 background-color: {};
             }}
-            menu#{LIGHT_WIDGET_NAME} menuitem#{LIGHT_WIDGET_NAME} arrow {{
+            #{LIGHT_WIDGET_NAME} arrow {{
                 color: {};
                 background-color: {};
             }}
-            menu#{DARK_WIDGET_NAME} menuitem#{DARK_WIDGET_NAME}:hover arrow {{
+            #{DARK_WIDGET_NAME}:hover arrow {{
                 background-color: {};
             }}
-            menu#{LIGHT_WIDGET_NAME} menuitem#{LIGHT_WIDGET_NAME}:hover arrow {{
+            #{LIGHT_WIDGET_NAME}:hover arrow {{
                 background-color: {};
             }}
 
@@ -291,6 +384,11 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             separator#{LIGHT_WIDGET_NAME} {{
                 background-color: {};
             }}
+            #{WIDGET_NAME} label,
+            #{DARK_WIDGET_NAME} label,
+            #{LIGHT_WIDGET_NAME} label{{
+                {}
+            }}
         "#,
         /* accelerator */
         config.font.dark_font_size,
@@ -300,6 +398,9 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.accelerator),
         /* check */
         check,
+        /* checked */
+        checked,
+        /* check color */
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
@@ -309,6 +410,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         to_rgba_string(config.color.light.hover_background_color),
         /* arrow */
         arrow,
+        /* arrow color */
         to_rgba_string(config.color.dark.color),
         to_rgba_string(config.color.dark.background_color),
         to_rgba_string(config.color.light.color),
@@ -334,26 +436,94 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
         config.size.separator_size,
         to_rgba_string(config.color.dark.separator),
         to_rgba_string(config.color.light.separator),
+        /* padding for custom checkmark */
+        get_label_padding(config)
     )
 }
 
-pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
-    let url = icon.to_string_lossy();
-    let (width, height) = if let Some(svg) = &config.icon.as_ref().unwrap().check_svg {
-        (svg.width as f32, svg.height as f32)
+fn get_label_padding(config: &Config) -> String {
+    if let Some(width) = get_custom_check_width(config) {
+        format!("padding-right:{:?}px", width)
     } else {
-        let font_size = config.font.dark_font_size.max(config.font.light_font_size);
-        (font_size, font_size)
-    };
+        String::new()
+    }
+}
 
+pub(crate) fn get_path_icon_css(icon: &PathIcon, config: &Config) -> String {
+    let url = icon.path.to_string_lossy();
+    let width = icon.width;
+    let height = icon.height;
+
+    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+        if is_svg(&icon.path) {
+            format!(
+                r#"
+                    menuitem image {{
+                        background-image:-gtk-recolor(url("{url}"));
+                        background-repeat: no-repeat;
+                        background-size: contain;
+                        background-position: center;
+                        margin-left: {margin}px;
+                        margin-right: {margin}px;
+                        min-width: {width}px;
+                        min-height: {height}px;
+                    }}
+                "#
+            )
+        } else {
+            format!(
+                r#"
+                    menuitem image {{
+                        background-image: url("{url}");
+                        background-repeat: no-repeat;
+                        background-size: contain;
+                        background-position: center;
+                        margin-left: {margin}px;
+                        margin-right: {margin}px;
+                        min-width: {width}px;
+                        min-height: {height}px;
+                    }}
+                "#
+            )
+        }
+    } else {
+        if is_svg(&icon.path) {
+            format!(
+                r#"
+                    menuitem image {{
+                        background-image:-gtk-recolor(url("{url}"));
+                        background-repeat: no-repeat;
+                        background-size: contain;
+                        background-position: center;
+                        min-width: {width}px;
+                        min-height: {height}px;
+                    }}
+                "#
+            )
+        } else {
+            format!(
+                r#"
+                    menuitem image {{
+                        background-image: url("{url}");
+                        background-repeat: no-repeat;
+                        background-size: contain;
+                        background-position: center;
+                        min-width: {width}px;
+                        min-height: {height}px;
+                    }}
+                "#
+            )
+        }
+    }
+}
+
+pub(crate) fn get_data_icon_css(data_icon: &DataIcon, config: &Config) -> String {
+    let width = data_icon.width;
+    let height = data_icon.height;
     if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
         format!(
             r#"
                 menuitem image {{
-                    background-image:-gtk-recolor(url("{url}"));
-                    background-repeat: no-repeat;
-                    background-size: contain;
-                    background-position: center;
                     margin-left: {margin}px;
                     margin-right: {margin}px;
                     min-width: {width}px;
@@ -365,10 +535,6 @@ pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
         format!(
             r#"
                 menuitem image {{
-                    background-image:-gtk-recolor(url("{url}"));
-                    background-repeat: no-repeat;
-                    background-size: contain;
-                    background-position: center;
                     min-width: {width}px;
                     min-height: {height}px;
                 }}
@@ -377,33 +543,7 @@ pub(crate) fn get_icon_menu_css(icon: &Path, config: &Config) -> String {
     }
 }
 
-pub(crate) fn get_rgba_icon_menu_css(rgba_icon: &RgbaIcon, config: &Config) -> String {
-    let width = rgba_icon.width;
-    let height = rgba_icon.height;
-    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
-        format!(
-            r#"
-                menuitem image {{
-                    margin-left: {margin}px;
-                    margin-right: {margin}px;
-                    min-width: {width}px;
-                    min-height: {height}px;
-                }}
-            "#
-        )
-    } else {
-        format!(
-            r#"
-                menuitem image {{
-                    min-width: {width}px;
-                    min-height: {height}px;
-                }}
-            "#
-        )
-    }
-}
-
-pub(crate) fn get_svg_icon_menu_css(svg: &SvgData, config: &Config) -> String {
+pub(crate) fn get_svg_icon_css(svg: &SvgIcon, config: &Config) -> String {
     let width = svg.width;
     let height = svg.height;
     if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
@@ -430,7 +570,27 @@ pub(crate) fn get_svg_icon_menu_css(svg: &SvgData, config: &Config) -> String {
 }
 
 pub(crate) fn get_hidden_image_css(config: &Config) -> String {
-    if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+    if let Some(width) = get_custom_check_width(config) {
+        if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
+            format!(
+                r#"
+                    menuitem image {{
+                        margin-left: {margin}px;
+                        margin-right: {margin}px;
+                        min-width: {width}px;
+                    }}
+                "#
+            )
+        } else {
+            format!(
+                r#"
+                    menuitem image {{
+                        min-width: {width}px;
+                    }}
+                "#
+            )
+        }
+    } else if let Some(margin) = config.icon.as_ref().unwrap().horizontal_margin {
         format!(
             r#"
                 menuitem image {{

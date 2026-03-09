@@ -1,13 +1,12 @@
-use super::{
-    get_current_theme, rgba_from_hex, to_hex_string, util::encode_wide, ComGuard, Config, FontWeight, IconSettings, IconSize, IconSpace, MenuImageType, MenuItem, MenuSVG, Theme, DEFAULT_ICON_MARGIN,
-    MIN_BUTTON_WIDTH,
+use super::{get_current_theme, rgba_from_hex, to_hex_string, util::encode_wide, ComGuard, IconSettings, IconSpace, IconWidth, MenuItem, Size, DEFAULT_ICON_MARGIN, MIN_BUTTON_WIDTH};
+use crate::{
+    config::{Config, FontWeight, Theme},
+    DataIcon, MenuIcon, MenuIconKind, MenuItemType, PathIcon, SvgIcon,
 };
-use crate::{MenuIcon, MenuIconKind, MenuItemType, SvgData};
-use std::{fs, path::PathBuf};
 use windows::{
     core::{w, Error, Interface, PCWSTR},
     Win32::{
-        Foundation::{GENERIC_READ, RECT},
+        Foundation::{E_FAIL, GENERIC_READ, RECT},
         Graphics::{
             Direct2D::{
                 Common::{D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_F},
@@ -22,13 +21,26 @@ use windows::{
             },
             Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
             Imaging::{
-                CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, IWICFormatConverter, IWICImagingFactory, WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
+                CLSID_WICImagingFactory, GUID_WICPixelFormat32bppPBGRA, GUID_WICPixelFormat32bppRGBA, IWICBitmapSource, IWICImagingFactory, WICBitmapDitherTypeNone,
+                WICBitmapInterpolationModeHighQualityCubic, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnDemand,
             },
         },
         System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
         UI::Shell::SHCreateMemStream,
     },
 };
+
+#[derive(Debug)]
+pub(crate) enum MenuImageType {
+    Bitmap(ID2D1Bitmap1),
+    Svg(SvgDocument),
+}
+
+#[derive(Debug)]
+pub(crate) struct SvgDocument {
+    pub(crate) document: ID2D1SvgDocument,
+    pub(crate) color_required: bool,
+}
 
 #[derive(PartialEq)]
 pub(crate) enum TextAlignment {
@@ -44,7 +56,7 @@ enum LeftButton {
 }
 
 pub(crate) fn create_render_target() -> Result<ID2D1DCRenderTarget, Error> {
-    let factory: ID2D1Factory1 = unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None).unwrap() };
+    let factory: ID2D1Factory1 = unsafe { D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None) }?;
 
     let prop = D2D1_RENDER_TARGET_PROPERTIES {
         r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -69,23 +81,21 @@ pub(crate) fn create_write_factory() -> Result<IDWriteFactory, Error> {
     unsafe { DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED) }
 }
 
-pub(crate) fn set_fill_color(element: &ID2D1SvgElement, color: u32) {
+pub(crate) fn set_svg_color(element: &ID2D1SvgElement, color: u32) -> Result<(), Error> {
     let hex_string = to_hex_string(color);
     let wide = encode_wide(hex_string);
-    unsafe { element.SetAttributeValue3(w!("fill"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, PCWSTR::from_raw(wide.as_ptr())).unwrap() };
+    unsafe { element.SetAttributeValue3(w!("color"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, PCWSTR::from_raw(wide.as_ptr())) }
 }
 
-pub(crate) fn set_stroke_color(element: &ID2D1SvgElement, color: u32) {
-    let hex_string = to_hex_string(color);
-    let wide = encode_wide(hex_string);
-    unsafe { element.SetAttributeValue3(w!("stroke"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, PCWSTR::from_raw(wide.as_ptr())).unwrap() };
+fn has_current_color(svg_data: &str) -> bool {
+    svg_data.contains("currentColor")
 }
 
 fn font_point_to_pixel(font_point: f32) -> f32 {
     (1.3 * font_point).round()
 }
 
-pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<ID2D1SvgDocument, Error> {
+pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<SvgDocument, Error> {
     let dc5 = get_device_context(target)?;
 
     let document = unsafe {
@@ -108,6 +118,8 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) ->
     };
 
     let root = unsafe { document.GetRoot() }?;
+    unsafe { root.SetAttributeValue3(w!("fill"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("currentColor"))? };
+    unsafe { root.SetAttributeValue3(w!("stroke"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("currentColor"))? };
     unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8"))? };
     unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16"))? };
 
@@ -135,10 +147,13 @@ pub(crate) fn create_check_svg(target: &ID2D1DCRenderTarget, config: &Config) ->
 
     unsafe { root.AppendChild(&element)? };
 
-    Ok(document)
+    Ok(SvgDocument {
+        document,
+        color_required: true,
+    })
 }
 
-pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<ID2D1SvgDocument, Error> {
+pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) -> Result<SvgDocument, Error> {
     let dc5 = get_device_context(target)?;
 
     let document = unsafe {
@@ -161,6 +176,8 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
     };
 
     let root = unsafe { document.GetRoot()? };
+    unsafe { root.SetAttributeValue3(w!("fill"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("currentColor"))? };
+    unsafe { root.SetAttributeValue3(w!("stroke"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("currentColor"))? };
     unsafe { root.SetAttributeValue3(w!("stroke-width"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("0.8"))? };
     unsafe { root.SetAttributeValue3(w!("viewBox"), D2D1_SVG_ATTRIBUTE_STRING_TYPE_SVG, w!("-0.8 -0.8 16 16"))? };
 
@@ -188,58 +205,56 @@ pub(crate) fn create_submenu_svg(target: &ID2D1DCRenderTarget, config: &Config) 
     unsafe { element.SetAttributeValue(w!("d"), &path)? };
     unsafe { root.AppendChild(&element)? };
 
-    Ok(document)
+    Ok(SvgDocument {
+        document,
+        color_required: true,
+    })
 }
 
-pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon, default_size: i32) -> Result<MenuImageType, Error> {
+pub(crate) fn create_menu_image(target: &ID2D1DCRenderTarget, menu_icon: &MenuIcon) -> Result<MenuImageType, Error> {
+    let _guard = ComGuard::new();
+
     let menu_image_type = match &menu_icon.icon {
         MenuIconKind::Path(icon) => {
             let mut is_svg = false;
-            if let Some(extension) = icon.extension() {
-                is_svg = extension.eq_ignore_ascii_case("svg");
+            if let Some(extension) = icon.path.extension() {
+                is_svg = extension.eq("svg") || extension.eq("SVG");
             }
 
             if is_svg {
-                let svg_document = create_svg_from_path(
-                    target,
-                    &MenuSVG {
-                        path: icon.clone(),
-                        width: default_size,
-                        height: default_size,
-                    },
-                )?;
-                MenuImageType::Svg(svg_document)
+                let svg = create_svg_from_path(target, icon)?;
+                MenuImageType::Svg(svg)
             } else {
                 let bitmap = create_bitmap_from_path(target, icon)?;
                 MenuImageType::Bitmap(bitmap)
             }
         }
-        MenuIconKind::Rgba(icon) => {
-            let bitmap = create_bitmap_from_rgba(target, icon.rgba.clone(), icon.width, icon.height)?;
+        MenuIconKind::Data(icon) => {
+            let bitmap = create_bitmap_from_data(target, icon)?;
             MenuImageType::Bitmap(bitmap)
         }
         MenuIconKind::Svg(svg) => {
-            let svg_document = create_svg_from_data(target, svg)?;
-            MenuImageType::Svg(svg_document)
+            let svg = create_svg_from_data(target, svg)?;
+            MenuImageType::Svg(svg)
         }
     };
 
     Ok(menu_image_type)
 }
 
-fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> Result<ID2D1Bitmap1, Error> {
+fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, path_icon: &PathIcon) -> Result<ID2D1Bitmap1, Error> {
     let dc5 = get_device_context(target)?;
 
-    let _guard = ComGuard::new();
-
     let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
-    let wide = encode_wide(icon);
+    let wide = encode_wide(path_icon.path.clone());
     let file_path = PCWSTR::from_raw(wide.as_ptr());
     let decoder = unsafe { wic_factory.CreateDecoderFromFilename(file_path, None, GENERIC_READ, WICDecodeMetadataCacheOnDemand)? };
     let frame = unsafe { decoder.GetFrame(0)? };
-    let format_converter: IWICFormatConverter = unsafe { wic_factory.CreateFormatConverter()? };
+    let scaler = unsafe { wic_factory.CreateBitmapScaler() }?;
+    unsafe { scaler.Initialize(&frame, path_icon.width, path_icon.height, WICBitmapInterpolationModeHighQualityCubic) }?;
+    let format_converter = unsafe { wic_factory.CreateFormatConverter()? };
     unsafe {
-        format_converter.Initialize(&frame, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)?;
+        format_converter.Initialize(&scaler, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)?;
     }
 
     unsafe {
@@ -256,19 +271,27 @@ fn create_bitmap_from_path(target: &ID2D1DCRenderTarget, icon: &PathBuf) -> Resu
     }
 }
 
-pub(crate) fn create_svg_from_data(target: &ID2D1DCRenderTarget, svg: &SvgData) -> Result<ID2D1SvgDocument, Error> {
-    create_svg(target, svg.data.as_bytes(), svg.width, svg.height)
+fn create_svg_from_data(target: &ID2D1DCRenderTarget, svg_icon: &SvgIcon) -> Result<SvgDocument, Error> {
+    let document = create_direct2d_svg(target, svg_icon.data.as_bytes(), svg_icon.width, svg_icon.height)?;
+    let color_required = has_current_color(&svg_icon.data);
+    Ok(SvgDocument {
+        document,
+        color_required,
+    })
 }
 
-pub(crate) fn create_svg_from_path(target: &ID2D1DCRenderTarget, svg: &MenuSVG) -> Result<ID2D1SvgDocument, Error> {
-    let svg_data = fs::read(&svg.path)?;
-    create_svg(target, &svg_data, svg.width as u32, svg.height as u32)
+fn create_svg_from_path(target: &ID2D1DCRenderTarget, path_icon: &PathIcon) -> Result<SvgDocument, Error> {
+    let svg_data = std::fs::read_to_string(path_icon.path.clone())?;
+    let document = create_direct2d_svg(target, svg_data.as_bytes(), path_icon.width, path_icon.height)?;
+    let color_required = has_current_color(&svg_data);
+    Ok(SvgDocument {
+        document,
+        color_required,
+    })
 }
 
-fn create_svg(target: &ID2D1DCRenderTarget, stream: &[u8], width: u32, height: u32) -> Result<ID2D1SvgDocument, Error> {
+fn create_direct2d_svg(target: &ID2D1DCRenderTarget, stream: &[u8], width: u32, height: u32) -> Result<ID2D1SvgDocument, Error> {
     let dc5 = get_device_context(target)?;
-
-    let _guard = ComGuard::new();
 
     match unsafe { SHCreateMemStream(Some(stream)) } {
         Some(stream) => unsafe {
@@ -293,25 +316,44 @@ fn create_svg(target: &ID2D1DCRenderTarget, stream: &[u8], width: u32, height: u
     }
 }
 
-pub(crate) fn create_bitmap_from_rgba(target: &ID2D1DCRenderTarget, rgba: Vec<u8>, width: u32, height: u32) -> Result<ID2D1Bitmap1, Error> {
+fn create_bitmap_from_data(target: &ID2D1DCRenderTarget, data_icon: &DataIcon) -> Result<ID2D1Bitmap1, Error> {
     let dc5 = get_device_context(target)?;
 
-    unsafe {
-        dc5.CreateBitmap(
-            windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_U {
-                width,
-                height,
-            },
-            Some(rgba.as_ptr() as _),
-            width * 4,
-            &D2D1_BITMAP_PROPERTIES1 {
-                pixelFormat: D2D1_PIXEL_FORMAT {
-                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-                },
-                ..Default::default()
-            },
-        )
+    let wic_factory: IWICImagingFactory = unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)? };
+    match unsafe { SHCreateMemStream(Some(&data_icon.data)) } {
+        Some(stream) => {
+            let source: IWICBitmapSource = if let Ok(decoder) = unsafe { wic_factory.CreateDecoderFromStream(&stream, std::ptr::null(), WICDecodeMetadataCacheOnDemand) } {
+                let frame = unsafe { decoder.GetFrame(0)? };
+                let scaler = unsafe { wic_factory.CreateBitmapScaler() }?;
+                unsafe { scaler.Initialize(&frame, data_icon.width, data_icon.height, WICBitmapInterpolationModeHighQualityCubic) }?;
+                let format_converter = unsafe { wic_factory.CreateFormatConverter()? };
+                unsafe {
+                    format_converter.Initialize(&scaler, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)?;
+                }
+                format_converter.into()
+            } else {
+                let wic_bitmap = unsafe { wic_factory.CreateBitmapFromMemory(data_icon.width, data_icon.height, &GUID_WICPixelFormat32bppRGBA, data_icon.width * 4, &data_icon.data)? };
+                let format_converter = unsafe { wic_factory.CreateFormatConverter()? };
+                unsafe {
+                    format_converter.Initialize(&wic_bitmap, &GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, None, 0.0, WICBitmapPaletteTypeCustom)?;
+                }
+                format_converter.into()
+            };
+
+            unsafe {
+                dc5.CreateBitmapFromWicBitmap(
+                    &source,
+                    Some(&D2D1_BITMAP_PROPERTIES1 {
+                        pixelFormat: D2D1_PIXEL_FORMAT {
+                            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                        },
+                        ..Default::default()
+                    }),
+                )
+            }
+        }
+        None => Err(Error::new(E_FAIL, "Failed to create stream from the given data")),
     }
 }
 
@@ -379,7 +421,26 @@ pub(crate) fn colorref_to_d2d1_color_f(color: u32) -> D2D1_COLOR_F {
     }
 }
 
-pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, check_svg: &ID2D1SvgDocument, submenu_svg: &ID2D1SvgDocument) -> IconSpace {
+pub(crate) fn get_icon_size(icon: &MenuImageType) -> Size {
+    match icon {
+        MenuImageType::Bitmap(bitmap) => unsafe {
+            let size = bitmap.GetSize();
+            Size {
+                width: size.width as i32,
+                height: size.height as i32,
+            }
+        },
+        MenuImageType::Svg(svg) => unsafe {
+            let size = svg.document.GetViewportSize();
+            Size {
+                width: size.width as i32,
+                height: size.height as i32,
+            }
+        },
+    }
+}
+
+pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, check_icon: &MenuImageType, submenu_icon: &MenuImageType) -> IconSpace {
     if items.is_empty() {
         return IconSpace::default();
     }
@@ -399,16 +460,16 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
         LeftButton::None
     };
 
-    let check_svg_size = unsafe { check_svg.GetViewportSize().width } as i32;
-    let submenu_svg_size = unsafe { submenu_svg.GetViewportSize().width } as i32;
-    let max_icon_size = if has_icon {
+    let check_icon_size = get_icon_size(check_icon);
+    let submenu_icon_size = get_icon_size(submenu_icon);
+    let max_icon_width = if has_icon {
         items
             .iter()
             .map(|item| {
                 if let Some(menu_icon) = &item.icon {
                     match &menu_icon.icon {
-                        MenuIconKind::Path(_) => 0,
-                        MenuIconKind::Rgba(rgba) => rgba.width,
+                        MenuIconKind::Path(icon) => icon.width,
+                        MenuIconKind::Data(data) => data.width,
                         MenuIconKind::Svg(svg) => svg.width,
                     }
                 } else {
@@ -425,33 +486,33 @@ pub(crate) fn get_icon_space(items: &[MenuItem], icon_settings: &IconSettings, c
 
     let left = match left_button {
         /* No left margin which is set by MenuItem horizontal padding */
-        LeftButton::CheckAndIcon | LeftButton::Check => IconSize {
-            width: check_svg_size,
+        LeftButton::CheckAndIcon | LeftButton::Check => IconWidth {
+            width: check_icon_size.width,
             lmargin: 0,
             rmargin: default_margin,
         },
-        LeftButton::Icon | LeftButton::None => IconSize::default(),
+        LeftButton::Icon | LeftButton::None => IconWidth::default(),
     };
 
     let mid = match left_button {
         /* When horizontal_margin is set, use it for left and right margin */
-        LeftButton::CheckAndIcon | LeftButton::Icon => IconSize {
-            width: check_svg_size.max(max_icon_size as _),
+        LeftButton::CheckAndIcon | LeftButton::Icon => IconWidth {
+            width: check_icon_size.width.max(max_icon_width as i32),
             lmargin: icon_settings.horizontal_margin.unwrap_or(0),
             rmargin: icon_settings.horizontal_margin.unwrap_or(default_margin),
         },
-        LeftButton::Check | LeftButton::None => IconSize::default(),
+        LeftButton::Check | LeftButton::None => IconWidth::default(),
     };
 
     let right = if has_submenu {
         /* Double left margin for arrow icon. No right margin which is set by MenuItem horizontal padding */
-        IconSize {
-            width: submenu_svg_size,
+        IconWidth {
+            width: submenu_icon_size.width,
             lmargin: default_margin * 2,
             rmargin: 0,
         }
     } else {
-        IconSize::default()
+        IconWidth::default()
     };
 
     IconSpace {
