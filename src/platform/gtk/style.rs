@@ -160,6 +160,7 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
             MenuIconKind::Path(icon) => {
                 format!(
                     r#"
+                        -gtk-icon-source:none;
                         min-width: {}px;
                         min-height: {}px;
                     "#,
