@@ -4,7 +4,7 @@ use crate::{
     MenuIconKind, MenuItemType,
 };
 use gtk::{
-    ffi::{GtkAccelGroup, GtkMenu, GtkMenuItem, GtkWindow},
+    ffi::{GtkMenu, GtkMenuItem, GtkWindow},
     glib::{
         translate::{FromGlibPtrNone, ToGlibPtr},
         IsA, ObjectExt,
@@ -22,6 +22,11 @@ pub(crate) fn get_menu_data<'a>(gtk_menu_handle: isize) -> &'a MenuData {
 pub(crate) fn get_menu_data_mut<'a>(gtk_menu_handle: isize) -> &'a mut MenuData {
     let menu = to_gtk_menu(gtk_menu_handle);
     unsafe { menu.data::<MenuData>("data").unwrap().as_mut() }
+}
+
+pub(crate) fn get_accel_group<'a>(gtk_menu_handle: isize) -> &'a AccelGroup {
+    let menu = to_gtk_menu(gtk_menu_handle);
+    unsafe { menu.data::<AccelGroup>("accel_group").unwrap().as_ref() }
 }
 
 pub(crate) fn get_menu_item_data<'a>(gtk_menu_item: &impl IsA<Widget>) -> &'a MenuItem {
@@ -59,16 +64,6 @@ pub(crate) fn to_gtk_menu_item(gtk_menu_item_handle: isize) -> gtk::MenuItem {
 
 pub(crate) fn from_gtk_menu_item(gtk_menu_item: &gtk::MenuItem) -> isize {
     let ptr: *mut GtkMenuItem = gtk_menu_item.to_glib_none().0;
-    ptr as isize
-}
-
-pub(crate) fn to_accel_group(accel_group_handle: isize) -> AccelGroup {
-    let accel_group: AccelGroup = unsafe { AccelGroup::from_glib_none(accel_group_handle as *mut GtkAccelGroup) };
-    accel_group
-}
-
-pub(crate) fn from_accel_group(accel_group: &AccelGroup) -> isize {
-    let ptr: *mut GtkAccelGroup = accel_group.to_glib_none().0;
     ptr as isize
 }
 

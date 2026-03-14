@@ -233,9 +233,9 @@ impl Menu {
 
         #[cfg(feature = "accelerator")]
         connect_accelerator(&gtk_menu, self.gtk_menu_handle, self.gtk_window_handle);
-        toggle_visible(self.gtk_menu_handle);
+        toggle_visible(&gtk_window, self.gtk_menu_handle);
         gtk_menu.popup_at_rect(&window, &Rectangle::new(x, y, 0, 0), Gravity::NorthWest, Gravity::NorthWest, Some(&event));
-        toggle_visible(self.gtk_menu_handle);
+        toggle_visible(&gtk_window, self.gtk_menu_handle);
     }
 
     /// Shows Menu asynchronously at the specified point and returns the selected MenuItem if any.
@@ -264,7 +264,7 @@ impl Menu {
                 #[cfg(feature = "accelerator")]
                 connect_accelerator(&gtk_menu, gtk_menu_handle, gtk_window_handle);
 
-                toggle_visible(gtk_menu_handle);
+                toggle_visible(&gtk_window, gtk_menu_handle);
 
                 gtk_menu.popup_at_rect(&window, &Rectangle::new(x, y, 0, 0), Gravity::NorthWest, Gravity::NorthWest, Some(&event));
 
@@ -282,7 +282,7 @@ impl Menu {
 
                 gtk_menu.disconnect(signal);
 
-                toggle_visible(gtk_menu_handle);
+                toggle_visible(&gtk_window, gtk_menu_handle);
 
                 /*
                     Wait 50 ms for "activate" event.
@@ -304,9 +304,14 @@ impl Menu {
     }
 }
 
-fn toggle_visible(gtk_menu_handle: isize) {
+fn toggle_visible(gtk_window: &gtk::Window, gtk_menu_handle: isize) {
     let menu_data = get_menu_data_mut(gtk_menu_handle);
     menu_data.visible = !menu_data.visible;
+    if menu_data.visible {
+        add_accel_group(gtk_window, gtk_menu_handle);
+    } else {
+        remove_accel_group(gtk_window, gtk_menu_handle);
+    }
 }
 
 pub(crate) fn collect_menu_items(gtk_menu_handle: isize) -> Vec<MenuItem> {

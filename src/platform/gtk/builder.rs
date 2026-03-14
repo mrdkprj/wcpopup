@@ -1,19 +1,19 @@
-use super::{accelerator::setup_accel_group, create_gtk_menu_item, from_accel_group, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_menu_item_icons, Container};
+use super::{accelerator::setup_accel_group, create_gtk_menu_item, from_gtk_menu, to_gtk_menu, to_gtk_window, toggle_menu_item_icons, Container};
 use crate::{
     config::{Config, IconSettings, Theme},
     Menu, MenuIcon, MenuIconKind, MenuItem, MenuItemType, MenuType,
 };
 use gtk::{
     glib::{Error, IsA, ObjectExt},
-    prelude::{GtkWindowExt, MenuShellExt},
+    prelude::MenuShellExt,
     traits::{ContainerExt, WidgetExt},
+    AccelGroup,
 };
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MenuData {
     pub(crate) config: Config,
-    pub(crate) accel_group_handle: Option<isize>,
     pub(crate) visible: bool,
     pub(crate) parent_gtk_menu_handle: isize,
     pub(crate) has_custom_check_image: bool,
@@ -346,15 +346,18 @@ impl MenuBuilder {
         }
 
         /* Add accel_group after gtk::MenuItem is created */
-        let mut accel_group_handle = None;
-        let mut accelerators = HashMap::new();
         if is_main_menu {
+            let mut accelerators = HashMap::new();
             collect_accelerators(&self.items, &mut accelerators);
             if !accelerators.is_empty() {
-                let gtk_window = to_gtk_window(self.menu.gtk_window_handle);
                 let accel_group = setup_accel_group(&accelerators);
-                gtk_window.add_accel_group(&accel_group);
-                accel_group_handle = Some(from_accel_group(&accel_group));
+                /*
+                   Adding accel group to window can conflict with window's accel group like Ctrl+C
+                   So store it in data and add it to window only when the menu shows.
+                */
+                unsafe { gtk_menu.set_data("accel_group", accel_group) };
+            } else {
+                unsafe { gtk_menu.set_data("accel_group", AccelGroup::new()) };
             }
         }
 
@@ -367,7 +370,6 @@ impl MenuBuilder {
 
         let data = MenuData {
             config: self.config,
-            accel_group_handle,
             visible: false,
             parent_gtk_menu_handle: self.menu.parent_gtk_menu_handle,
             has_custom_check_image,

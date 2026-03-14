@@ -1,14 +1,19 @@
+use super::to_gtk_menu_item;
 #[cfg(feature = "accelerator")]
 use super::to_gtk_window;
-use super::{get_menu_data, to_accel_group, to_gtk_menu_item};
-use crate::{MenuItem, MenuItemType};
+use super::{util::get_accel_group, MenuItem, MenuItemType};
 #[cfg(feature = "accelerator")]
 use gtk::{
     accelerator_name,
     glib::{Propagation, Quark},
     prelude::AccelGroupExt,
 };
-use gtk::{gdk::keys::Key, gdk::ModifierType, prelude::WidgetExt, AccelFlags, AccelGroup};
+use gtk::{
+    gdk::{keys::Key, ModifierType},
+    prelude::WidgetExt,
+    traits::GtkWindowExt,
+    AccelFlags, AccelGroup,
+};
 use std::collections::HashMap;
 
 pub(crate) struct AcceleratorKey {
@@ -29,20 +34,18 @@ pub(crate) fn setup_accel_group(accelerators: &HashMap<isize, String>) -> AccelG
     accel_group
 }
 
-pub(crate) fn add_accelerator(gtk_menu_handle: isize, new_accelerators: &HashMap<isize, String>) {
-    let data = get_menu_data(gtk_menu_handle);
-    if let Some(accel_group_handle) = data.accel_group_handle {
-        let accel_group = to_accel_group(accel_group_handle);
-        for (menu_item_handle, accelerator) in new_accelerators {
-            if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
-                let gtk_menu_item = to_gtk_menu_item(*menu_item_handle);
-                gtk_menu_item.add_accelerator("activate", &accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
-            }
+pub(crate) fn add_accelerator(main_gtk_menu_handle: isize, new_accelerators: &HashMap<isize, String>) {
+    let accel_group = get_accel_group(main_gtk_menu_handle);
+
+    for (menu_item_handle, accelerator) in new_accelerators {
+        if let Some(accelerator_key) = get_accelerator_key(accelerator.as_str()) {
+            let gtk_menu_item = to_gtk_menu_item(*menu_item_handle);
+            gtk_menu_item.add_accelerator("activate", accel_group, accelerator_key.key, accelerator_key.modifier_type, AccelFlags::VISIBLE);
         }
     }
 }
 
-pub(crate) fn add_accelerators_from_menu_item(gtk_menu_handle: isize, item: &MenuItem) {
+pub(crate) fn add_accelerators_from_menu_item(main_gtk_menu_handle: isize, item: &MenuItem) {
     let items = if item.menu_item_type == MenuItemType::Submenu {
         item.submenu.as_ref().unwrap().items()
     } else {
@@ -66,7 +69,7 @@ pub(crate) fn add_accelerators_from_menu_item(gtk_menu_handle: isize, item: &Men
         accelerators.insert(item.gtk_menu_item_handle, item.accelerator.clone());
     }
 
-    add_accelerator(gtk_menu_handle, &accelerators);
+    add_accelerator(main_gtk_menu_handle, &accelerators);
 }
 
 pub(crate) fn get_accelerator_key(accelerator: &str) -> Option<AcceleratorKey> {
@@ -101,6 +104,16 @@ pub(crate) fn get_accelerator_key(accelerator: &str) -> Option<AcceleratorKey> {
     })
 }
 
+pub(crate) fn add_accel_group(gtk_window: &gtk::Window, gtk_menu_handle: isize) {
+    let accel_group = get_accel_group(gtk_menu_handle);
+    gtk_window.add_accel_group(accel_group);
+}
+
+pub(crate) fn remove_accel_group(gtk_window: &gtk::Window, gtk_menu_handle: isize) {
+    let accel_group = get_accel_group(gtk_menu_handle);
+    gtk_window.remove_accel_group(accel_group);
+}
+
 #[cfg(feature = "accelerator")]
 pub(crate) fn connect_accelerator(gtk_menu: &gtk::Menu, gtk_menu_handle: isize, gtk_window_handle: isize) {
     gtk_menu.connect_key_press_event(move |memu, event| {
@@ -111,19 +124,15 @@ pub(crate) fn connect_accelerator(gtk_menu: &gtk::Menu, gtk_menu_handle: isize, 
 
         if let Some(quark) = accelerator_name(*key_val, modifiers) {
             let accel_quark = Quark::from_str(quark);
+            let accel_group = get_accel_group(gtk_menu_handle);
+            let gtk_window = to_gtk_window(gtk_window_handle);
+            let result = accel_group.activate(accel_quark, &gtk_window, *key_val, modifiers);
 
-            let data = get_menu_data(gtk_menu_handle);
-            if let Some(accel_group_handle) = data.accel_group_handle {
-                let accel_group = to_accel_group(accel_group_handle);
-                let gtk_window = to_gtk_window(gtk_window_handle);
-                let result = accel_group.activate(accel_quark, &gtk_window, *key_val, modifiers);
-
-                if result {
-                    memu.hide();
-                    return Propagation::Stop;
-                } else {
-                    return Propagation::Proceed;
-                }
+            if result {
+                memu.hide();
+                return Propagation::Stop;
+            } else {
+                return Propagation::Proceed;
             }
         }
 
