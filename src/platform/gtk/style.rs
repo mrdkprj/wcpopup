@@ -163,6 +163,12 @@ pub(crate) fn get_menu_item_css(config: &Config) -> String {
                         -gtk-icon-source:none;
                         min-width: {}px;
                         min-height: {}px;
+                        padding:0;
+                        margin:0;
+                        border:none;
+                        outline:none;
+                        background-image:none;
+                        opacity:0;
                     "#,
                     icon.width, icon.height,
                 )
