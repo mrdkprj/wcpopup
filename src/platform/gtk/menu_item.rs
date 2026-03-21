@@ -211,6 +211,9 @@ impl MenuItem {
             return;
         }
 
+        /* Suppress only when check state changes */
+        let suppress_event = self.checked != checked;
+
         self.checked = checked;
 
         /* Exit if window is not created */
@@ -221,7 +224,8 @@ impl MenuItem {
         let gtk_menu_item = to_gtk_menu_item(self.gtk_menu_item_handle);
         let menu_item = get_menu_item_data_mut(&gtk_menu_item);
         menu_item.checked = checked;
-        menu_item.suppress_event = true;
+        /* Suppress activate events by check state change */
+        menu_item.suppress_event = suppress_event;
 
         if self.menu_item_type == MenuItemType::Checkbox {
             gtk_menu_item.downcast_ref::<gtk::CheckMenuItem>().unwrap().set_active(checked);
