@@ -1,6 +1,10 @@
 use gtk::{
     gdk::{self, ffi::GdkEvent, Gravity, Rectangle},
-    glib::{monotonic_time, translate::ToGlibPtr, Cast, ObjectExt},
+    glib::{
+        monotonic_time,
+        translate::{FromGlib, ToGlibPtr},
+        Cast, ObjectExt, SignalHandlerId,
+    },
     prelude::{ContainerExt, CssProviderExt, GtkMenuExt, GtkMenuItemExt, GtkSettingsExt, MenuShellExt, SeatExt, StyleContextExt, WidgetExt},
     CssProvider, Widget, STYLE_PROVIDER_PRIORITY_APPLICATION,
 };
@@ -65,7 +69,7 @@ impl Menu {
                 let gtk_menu_handle = from_gtk_menu(&gtk_menu);
 
                 if let Some(settings) = gtk_window.settings() {
-                    settings.connect_gtk_application_prefer_dark_theme_notify(move |changed_settings| {
+                    let prefer_dark_theme_signal = settings.connect_gtk_application_prefer_dark_theme_notify(move |changed_settings| {
                         let theme = if changed_settings.is_gtk_application_prefer_dark_theme() {
                             Theme::Dark
                         } else {
@@ -73,8 +77,19 @@ impl Menu {
                         };
                         on_theme_change(MenuType::Main, gtk_menu_handle, Some(theme), ThemeChangeFactor::App);
                     });
-                    settings.connect_gtk_theme_name_notify(move |_| {
+                    let theme_name_signal = settings.connect_gtk_theme_name_notify(move |_| {
                         on_theme_change(MenuType::Main, gtk_menu_handle, None, ThemeChangeFactor::App);
+                    });
+
+                    /* Disconnect from settings events */
+                    let prefer_dark_theme_signal_raw = unsafe { prefer_dark_theme_signal.as_raw() };
+                    let theme_name_signal_raw = unsafe { theme_name_signal.as_raw() };
+                    gtk_menu.connect_destroy(move |_| {
+                        let gtk_window = to_gtk_window(gtk_window_handle);
+                        if let Some(settings) = gtk_window.settings() {
+                            settings.disconnect(unsafe { SignalHandlerId::from_glib(prefer_dark_theme_signal_raw) });
+                            settings.disconnect(unsafe { SignalHandlerId::from_glib(theme_name_signal_raw) });
+                        }
                     });
                 }
                 (0, gtk_window_handle, MenuType::Main)
