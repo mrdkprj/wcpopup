@@ -519,25 +519,27 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_KEYDOWN => {
-            let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN | VK_MENU);
+            if IsWindowVisible(window).as_bool() {
+                let should_close_menu = matches!(VIRTUAL_KEY(wparam.0 as u16), VK_ESCAPE | VK_LWIN | VK_RWIN | VK_MENU);
 
-            if should_close_menu {
-                init_menu_data(vtoi!(window.0), true);
-                post_message(None);
-                return LRESULT(0);
-            }
+                if should_close_menu {
+                    init_menu_data(vtoi!(window.0), true);
+                    post_message(None);
+                    return LRESULT(0);
+                }
 
-            #[cfg(feature = "accelerator")]
-            {
-                let keydown_msg = MSG {
-                    hwnd: window,
-                    wParam: wparam,
-                    lParam: lparam,
-                    message: msg,
-                    time: 0,
-                    pt: POINT::default(),
-                };
-                translate_accel(window, keydown_msg);
+                #[cfg(feature = "accelerator")]
+                {
+                    let keydown_msg = MSG {
+                        hwnd: window,
+                        wParam: wparam,
+                        lParam: lparam,
+                        message: msg,
+                        time: 0,
+                        pt: POINT::default(),
+                    };
+                    translate_accel(window, keydown_msg);
+                }
             }
 
             LRESULT(0)
@@ -545,17 +547,19 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
 
         #[cfg(feature = "accelerator")]
         WM_COMMAND | WM_SYSCOMMAND => {
-            if HIWORD(wparam.0 as u32) != 1 {
-                return LRESULT(0);
-            }
+            if IsWindowVisible(window).as_bool() {
+                if HIWORD(wparam.0 as u32) != 1 {
+                    return LRESULT(0);
+                }
 
-            let data = get_menu_data_mut(vtoi!(window.0));
-            let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
-            if let Some((data, index)) = maybe_index {
-                if on_menu_item_selected(data, index) {
-                    init_menu_data(vtoi!(window.0), true);
-                    let menu_item = &data.items[index];
-                    post_message(Some(menu_item));
+                let data = get_menu_data_mut(vtoi!(window.0));
+                let maybe_index = index_of_item(data, LOWORD(wparam.0 as u32));
+                if let Some((data, index)) = maybe_index {
+                    if on_menu_item_selected(data, index) {
+                        init_menu_data(vtoi!(window.0), true);
+                        let menu_item = &data.items[index];
+                        post_message(Some(menu_item));
+                    }
                 }
             }
 
@@ -568,18 +572,24 @@ unsafe extern "system" fn default_window_proc(window: HWND, msg: u32, wparam: WP
         }
 
         WM_LBUTTONDOWN | WM_RBUTTONDOWN => {
-            on_mouse_down(window, msg);
+            if IsWindowVisible(window).as_bool() {
+                on_mouse_down(window, msg);
+            }
             LRESULT(0)
         }
 
         WM_LBUTTONUP | WM_RBUTTONUP => {
-            on_mouse_up(window);
+            if IsWindowVisible(window).as_bool() {
+                on_mouse_up(window);
+            }
             LRESULT(0)
         }
 
         WM_MOUSEWHEEL => {
-            init_menu_data(vtoi!(window.0), true);
-            post_message(None);
+            if IsWindowVisible(window).as_bool() {
+                init_menu_data(vtoi!(window.0), true);
+                post_message(None);
+            }
             LRESULT(0)
         }
 
