@@ -1555,7 +1555,7 @@ fn create_menu_window(parent: isize) -> Result<isize, Error> {
 
     let hwnd = unsafe { CreateWindowExW(ex_style, class_name, PCWSTR::null(), window_styles, 0, 0, 0, 0, Some(hwnd!(parent)), None, GetModuleHandleW(PCWSTR::null()).map(Into::into).ok(), None) }?;
 
-    let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
+    let _ = unsafe { SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED) };
 
     Ok(vtoi!(hwnd.0))
 }
